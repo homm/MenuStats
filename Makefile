@@ -14,7 +14,6 @@
 # - Set BUNDLE_ID, APP_NAME as you like.
 
 APP_NAME := MenuStats
-BUNDLE_ID := com.example.menustats
 SWIFT_SOURCES := $(shell find Sources -name '*.swift')
 BUILD_DIR := build
 APP_DIR := $(BUILD_DIR)/$(APP_NAME).app
@@ -24,22 +23,17 @@ PLIST := Info.plist
 # Detect arch + SDK
 ARCH := arm64
 SDK := macosx
-MACOS_MIN := 13.0  # bump if needed
+MACOS_MIN := 13.0
 
-SWIFTC := swiftc
-SWIFT_FLAGS := -O -gnone -target $(ARCH)-apple-macos15.0 -sdk $(shell xcrun --sdk $(SDK) --show-sdk-path) \
-	-parse-as-library \
-	-framework Cocoa -framework SwiftUI -framework Combine
+SWIFT_FLAGS := -O -gnone -target $(ARCH)-apple-macos$(MACOS_MIN) -parse-as-library
 
 all: build
 
 $(BIN): $(SWIFT_SOURCES) $(PLIST)
 	@mkdir -p $(dir $(BIN)) $(APP_DIR)/Contents/Resources
 	@echo "[1/3] swiftc -> binary"
-	$(SWIFTC) $(SWIFT_FLAGS) -o $(BIN) $(SWIFT_SOURCES)
+	swiftc $(SWIFT_FLAGS) -o $(BIN) $(SWIFT_SOURCES)
 	@echo "[2/3] write Info.plist"
-	@/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $(BUNDLE_ID)" $(PLIST) >/dev/null 2>&1 || true
-	@/usr/libexec/PlistBuddy -c "Set :CFBundleName $(APP_NAME)" $(PLIST) >/dev/null 2>&1 || true
 	@cp $(PLIST) $(APP_DIR)/Contents/Info.plist
 	@echo "[3/3] codesign (ad-hoc)"
 	@codesign --force --deep --sign - --timestamp=none $(APP_DIR)
