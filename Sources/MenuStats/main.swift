@@ -160,8 +160,7 @@ struct LogTextView: NSViewRepresentable {
         return scroll
     }
 
-    func updateNSView(_ nsView: NSScrollView, context: Context) {
-    }
+    func updateNSView(_ nsView: NSScrollView, context: Context) {}
 }
 
 
@@ -297,7 +296,7 @@ struct ContentView: View {
                         onEditingChanged: { _ in
                             dependencies.log?.setCapacity(capacity)
                         })
-                .labelsHidden()
+                    .labelsHidden()
                 Text("\(capacity) lines")
                 Spacer()
                 Button("Close") { NSApp.terminate(nil) }
@@ -353,6 +352,46 @@ struct ContentView: View {
 }
 
 // MARK: - App entry (MenuBarExtra ensures icon exists)
+
+struct WindowConfigurator: NSViewRepresentable {
+    let autosaveKey: String = "MenuStats.window.size"
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            guard let window = view.window else { return }
+
+            // Разрешаем ресайз
+            window.styleMask.insert(.resizable)
+
+            // // 1) Восстановить сохранённый размер (если есть)
+            // if let str = UserDefaults.standard.string(forKey: autosaveKey) {
+            //     let comps = str.split(separator: ",").compactMap { Double($0) }
+            //     if comps.count == 2 {
+            //         let saved = NSSize(width: comps[0], height: comps[1])
+            //         var frame = window.frame
+            //         frame.size = saved
+            //         window.setFrame(frame, display: false)
+            //     }
+            // }
+
+            // // 2) Сохранять размер на каждый ресайз
+            // NotificationCenter.default.addObserver(
+            //     forName: NSWindow.didEndLiveResizeNotification,
+            //     object: window,
+            //     queue: .main
+            // ) { _ in
+            //     let sz = window.frame.size
+            //     let val = "\(sz.width),\(sz.height)"
+            //     UserDefaults.standard.set(val, forKey: autosaveKey)
+            // }
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
 @main
 struct MenuStatsApp: App {
     init() {
@@ -362,7 +401,8 @@ struct MenuStatsApp: App {
     var body: some Scene {
         MenuBarExtra("MenuStats", systemImage: "chart.bar.xaxis") {
             ContentView()
-                .frame(width: 420, height: 300)
+                .frame(minWidth: 420, minHeight: 300)
+                .background(WindowConfigurator())
         }
         .menuBarExtraStyle(.window)
     }
