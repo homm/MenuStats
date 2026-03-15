@@ -253,7 +253,7 @@ static void monitor(const char *state_file) {
             st.sleep_time += elapsed - st.INTERVAL;
         }
 
-        bool on_ac;
+        bool on_ac = false;
         (void)is_on_ac_power(&on_ac);
 
         if (on_ac) {
