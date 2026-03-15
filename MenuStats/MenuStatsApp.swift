@@ -18,6 +18,7 @@ enum AppSettings {
 final class AppDependencies: ObservableObject {
     static let shared = AppDependencies()
 
+    @Published var chipName: String?
     @Published var socSummary: String = ""
     @Published var latestMetrics: Metrics?
     @Published var metricsError: String = ""
@@ -25,19 +26,11 @@ final class AppDependencies: ObservableObject {
     private var metricsTask: Task<Void, Never>?
 
     private init() {
+        startMetricsLoop()
         loadSocInfo()
-        startMetricsLoopIfNeeded()
     }
 
-    private func loadSocInfo() {
-        do {
-            socSummary = formatSocSummary(try Macmon.socInfo())
-        } catch {
-            socSummary = ""
-        }
-    }
-
-    func startMetricsLoopIfNeeded() {
+    func startMetricsLoop() {
         guard metricsTask == nil else { return }
         metricsError = ""
 
@@ -85,30 +78,36 @@ final class AppDependencies: ObservableObject {
         metricsIntervalMs = interval
     }
 
+    private func loadSocInfo() {
+        do {
+            let info = try Macmon.socInfo()
+            chipName = info.chipName
+            socSummary = formatSocSummary(info)
+        } catch {
+            chipName = nil
+            socSummary = ""
+        }
+    }
+
     private func formatSocSummary(_ info: SocInfo) -> String {
-        let cpuParts = info.cpuDomains.compactMap { domain -> String? in
+        var parts = info.cpuDomains.compactMap { domain -> String? in
             let name = cpuDomainLabel(for: domain.name)
             guard !name.isEmpty else { return nil }
             return "\(domain.units) \(name)"
         }
-
-        var parts = [info.chipName]
-        if !cpuParts.isEmpty {
-            parts.append(cpuParts.joined(separator: ", "))
-        }
-        parts.append("\(info.gpuCores) GPU")
-        return parts.joined(separator: " ")
+        parts.append("\(info.gpuCores) GPU cores")
+        return parts.joined(separator: ", ")
     }
 
     private func cpuDomainLabel(for rawName: String) -> String {
         let lower = rawName.lowercased()
-        if lower.contains("eff") || lower.contains("e-core") || lower == "ecpu" {
-            return "ECPU"
+        if lower == "ecpu" {
+            return "E-cores"
         }
-        if lower.contains("perf") || lower.contains("p-core") || lower == "pcpu" {
-            return "PCPU"
+        if lower == "pcpu" {
+            return "P-cores"
         }
-        return rawName.uppercased()
+        return rawName;
     }
 }
 
@@ -123,8 +122,10 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 8) {
             HStack {
-                Text(dependencies.socSummary.isEmpty ? "MenuStats" : dependencies.socSummary)
+                Text(dependencies.chipName ?? "MenuStats")
                     .font(.headline)
+                Text(dependencies.socSummary)
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Button("⏼") { NSApp.terminate(nil) }
             }

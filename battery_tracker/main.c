@@ -312,7 +312,7 @@ static void show_status(const char *state_file) {
 
     // Trust INTERVAL from the state file
     if ( ! load_state(state_file, &st)) {
-        printf("\033[2KNo active battery session\n");
+        printf("No active battery session\n");
         return;
     }
 
@@ -332,8 +332,8 @@ static void show_status(const char *state_file) {
     format_time_hms(active_time, active_buf, sizeof(active_buf));
     format_time_hms(st.sleep_time, sleep_buf, sizeof(sleep_buf));
 
-    printf("\033[2KActive time: %s (%s sleep)\n", active_buf, sleep_buf);
-    printf("\033[2KBattery used: %ld%% %ldmAh (%d%% %dmAh current)\n",
+    printf("Active time: %s (%s sleep)\n", active_buf, sleep_buf);
+    printf("Battery used: %ld%% %ldmAh (%d%% %dmAh current)\n",
            st.start_battery - current_battery,
            st.start_capacity - current_capacity,
            current_battery, current_capacity);
