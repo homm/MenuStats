@@ -24,6 +24,7 @@ final class AppDependencies: ObservableObject {
     @Published var latestMetrics: Metrics?
     @Published private(set) var metricsHistory: [Metrics] = []
     @Published var metricsError: String = ""
+    var metricsCapacity: Int { metricsBuffer.capacity }
     fileprivate private(set) var metricsBuffer = MetricsRingBuffer(capacity: 100)
     private var metricsIntervalMs: Int = AppSettings.savedMetricsIntervalMs
     private var metricsTask: Task<Void, Never>?
@@ -152,8 +153,9 @@ struct ContentView: View {
             .padding(.bottom, 4)
 
             Divider()
+                .background(Color(nsColor: .textColor))
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Power")
                         .font(.headline)
@@ -163,59 +165,63 @@ struct ContentView: View {
                         .fontWeight(.bold)
                         .foregroundStyle(.secondary)
                 }
-                .padding(.bottom, 8)
 
                 if !powerHistory.isEmpty {
-                    Chart(powerHistory) { point in
-                        LineMark(
-                            x: .value("Sample", point.sample),
-                            y: .value("Watts", point.watts),
-                            series: .value("Series", point.series.rawValue)
-                        )
-                            .foregroundStyle(by: .value("Series", point.series.rawValue))
-                            .interpolationMethod(.monotone)
-                            .lineStyle(StrokeStyle(lineWidth: 1.5))
+                    HStack(alignment: .top) {
+                        Chart(powerHistory) { point in
+                            LineMark(
+                                x: .value("Sample", point.sample),
+                                y: .value("Watts", point.watts),
+                                series: .value("Series", point.series.rawValue)
+                            )
+                                .foregroundStyle(by: .value("Series", point.series.rawValue))
+                                .interpolationMethod(.monotone)
+                                .lineStyle(StrokeStyle(lineWidth: 1))
+                        }
+                            .chartForegroundStyleScale(powerColorScale)
+                            .chartLegend(position: .top, alignment: .trailing, spacing: 10)
+                            .chartXScale(domain: 0...max(dependencies.metricsCapacity - 1, 0))
+                            .chartYAxis { AxisMarks(position: .leading) }
+                            .chartXAxis(.hidden)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, -22)
+
+                        VStack(alignment: .leading, spacing: 0) {
+                            Spacer()
+                            ForEach(currentPowerValues, id: \.series.rawValue) { item in
+                                Text(formattedWatts(item.watts))
+                                    .font(.system(.footnote, design: .monospaced))
+                                    .fontWeight(.bold)
+                                    .foregroundStyle(color(for: item.series))
+                            }
+                        }
                     }
-                        .chartForegroundStyleScale(powerColorScale)
-                        .chartXScale(domain: 0...max(dependencies.metricsBuffer.capacity - 1, 0))
-                        .chartYAxis{AxisMarks(position: .leading)}
-                        .chartXAxis(.hidden)
                 }
 
-                if let power = dependencies.latestMetrics?.power {
-                    Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
-                        GridRow {
-                            powerValue("Package", power.package)
-                            powerValue("CPU", power.cpu)
-                            powerValue("GPU", power.gpu)
-                        }
-                        GridRow {
-                            powerValue("RAM", power.ram)
-                            powerValue("GPU RAM", power.gpuRAM)
-                            powerValue("ANE", power.ane)
-                        }
-                        GridRow {
-                            powerValue("Board", power.board)
-                            powerValue("Battery", power.battery)
-                            powerValue("DC In", power.dcIn)
-                        }
-                    }
-                    .font(.system(.callout, design: .monospaced))
-                } else if !dependencies.metricsError.isEmpty {
+                if dependencies.latestMetrics == nil && !dependencies.metricsError.isEmpty {
                     Text(dependencies.metricsError)
                         .font(.system(.callout, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
-                } else {
+                } else if dependencies.latestMetrics == nil {
                     Text("Waiting for metrics...")
                         .font(.system(.callout, design: .monospaced))
                         .foregroundStyle(.secondary)
+                    Spacer()
                 }
             }
+                .background {
+                    Color(.textBackgroundColor)
+                        .padding(.horizontal, -12)
+                        .padding(.vertical, -8)
+                }
 
-            HStack {
+            Divider()
+
+            HStack(spacing: 4) {
                 Text("Interval:")
-                Button("-") {
+                Text(intervalLabel)
+                Button("–") {
                     interval = fasterInterval(from: interval)
                 }
                     .buttonStyle(.plain)
@@ -227,7 +233,6 @@ struct ContentView: View {
                 }
                     .buttonStyle(.plain)
                     .keyboardShortcut("=", modifiers: [])
-                Text(intervalLabel)
                 Spacer()
             }
 
@@ -259,13 +264,8 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder
-    private func powerValue(_ label: String, _ value: Float) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Text("\(value.formatted(.number.precision(.fractionLength(0...2)))) W")
-        }
+    private func formattedWatts(_ value: Double) -> String {
+        String(format: "%6.2f", locale: Locale(identifier: "en_US_POSIX"), value)
     }
 
     private var intervalLabel: String {
@@ -278,11 +278,11 @@ struct ContentView: View {
     private var powerHistory: [PowerPoint] {
         dependencies.metricsHistory.enumerated().flatMap { idx, metrics in
             [
-                PowerPoint(id: "board-\(idx)", sample: idx, series: .board, watts: Double(metrics.power.board)),
-                PowerPoint(id: "pkg-\(idx)", sample: idx, series: .package, watts: Double(metrics.power.package)),
-                PowerPoint(id: "cpu-\(idx)", sample: idx, series: .cpu, watts: Double(metrics.power.cpu)),
                 PowerPoint(id: "ane-\(idx)", sample: idx, series: .ane, watts: Double(metrics.power.ane)),
                 PowerPoint(id: "gpu-\(idx)", sample: idx, series: .gpu, watts: Double(metrics.power.gpu)),
+                PowerPoint(id: "cpu-\(idx)", sample: idx, series: .cpu, watts: Double(metrics.power.cpu)),
+                PowerPoint(id: "pkg-\(idx)", sample: idx, series: .package, watts: Double(metrics.power.package)),
+                PowerPoint(id: "board-\(idx)", sample: idx, series: .board, watts: Double(metrics.power.board)),
             ]
         }
     }
@@ -292,8 +292,20 @@ struct ContentView: View {
             PowerSeries.board.rawValue: boardColor,
             PowerSeries.package.rawValue: packageColor,
             PowerSeries.cpu.rawValue: cpuColor,
-            PowerSeries.ane.rawValue: aneColor,
             PowerSeries.gpu.rawValue: gpuColor,
+            PowerSeries.ane.rawValue: aneColor,
+        ]
+    }
+
+    private var currentPowerValues: [(series: PowerSeries, watts: Double)] {
+        guard let power = dependencies.latestMetrics?.power else { return [] }
+
+        return [
+            (series: .board, watts: Double(power.board)),
+            (series: .package, watts: Double(power.package)),
+            (series: .cpu, watts: Double(power.cpu)),
+            (series: .ane, watts: Double(power.ane)),
+            (series: .gpu, watts: Double(power.gpu)),
         ]
     }
 
@@ -348,7 +360,7 @@ struct MenuStatsApp: App {
     var body: some Scene {
         MenuBarExtra("MenuStats", systemImage: "chart.bar.xaxis") {
             ContentView()
-                .frame(minWidth: 420, minHeight: 400)
+                .frame(minWidth: 420, minHeight: 320)
                 .background(WindowConfigurator())
         }
         .menuBarExtraStyle(.window)
