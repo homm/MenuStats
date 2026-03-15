@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B0A000012E5A000100000001 /* MacmonSwift in Frameworks */ = {isa = PBXBuildFile; productRef = B0A000032E5A000100000001 /* MacmonSwift */; };
 		AFFC83252E59E0930095EE6D /* pgauge in CopyFiles */ = {isa = PBXBuildFile; fileRef = AF9514142E59D96100550A10 /* pgauge */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		AFFC83392E59EAD40095EE6D /* battery_tracker in CopyFiles */ = {isa = PBXBuildFile; fileRef = AFFC83322E59EA600095EE6D /* battery_tracker */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 /* End PBXBuildFile section */
@@ -43,6 +44,28 @@
 		};
 /* End PBXCopyFilesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		B0A000002E5A000100000001 /* Copy libmacmon.dylib */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy libmacmon.dylib";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"$SRCROOT/scripts/copy_macmon_dylib.sh\"";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXFileReference section */
 		AF9513E52E59D8B900550A10 /* MenuStats.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MenuStats.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AF9514142E59D96100550A10 /* pgauge */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = pgauge; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -72,6 +95,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B0A000012E5A000100000001 /* MacmonSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -118,12 +142,13 @@
 		AF9513E42E59D8B900550A10 /* MenuStats */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = AF9514072E59D8B900550A10 /* Build configuration list for PBXNativeTarget "MenuStats" */;
-			buildPhases = (
-				AF9513E12E59D8B900550A10 /* Sources */,
-				AF9513E22E59D8B900550A10 /* Frameworks */,
-				AF9513E32E59D8B900550A10 /* Resources */,
-				AFFC83242E59E0410095EE6D /* CopyFiles */,
-			);
+				buildPhases = (
+					AF9513E12E59D8B900550A10 /* Sources */,
+					AF9513E22E59D8B900550A10 /* Frameworks */,
+					B0A000002E5A000100000001 /* Copy libmacmon.dylib */,
+					AF9513E32E59D8B900550A10 /* Resources */,
+					AFFC83242E59E0410095EE6D /* CopyFiles */,
+				);
 			buildRules = (
 			);
 			dependencies = (
@@ -131,11 +156,12 @@
 			fileSystemSynchronizedGroups = (
 				AF9513E72E59D8B900550A10 /* MenuStats */,
 			);
-			name = MenuStats;
-			packageProductDependencies = (
-			);
-			productName = MenuStats;
-			productReference = AF9513E52E59D8B900550A10 /* MenuStats.app */;
+				name = MenuStats;
+				packageProductDependencies = (
+					B0A000032E5A000100000001 /* MacmonSwift */,
+				);
+				productName = MenuStats;
+				productReference = AF9513E52E59D8B900550A10 /* MenuStats.app */;
 			productType = "com.apple.product-type.application";
 		};
 		AF9514132E59D96100550A10 /* pgauge */ = {
@@ -210,11 +236,14 @@
 				en,
 				Base,
 			);
-			mainGroup = AF9513DC2E59D8B900550A10;
-			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
-			productRefGroup = AF9513E62E59D8B900550A10 /* Products */;
-			projectDirPath = "";
+				mainGroup = AF9513DC2E59D8B900550A10;
+				minimizedProjectReferenceProxies = 1;
+				packageReferences = (
+					B0A000022E5A000100000001 /* XCLocalSwiftPackageReference "../macmon/bindings/swift" */,
+				);
+				preferredProjectObjectVersion = 77;
+				productRefGroup = AF9513E62E59D8B900550A10 /* Products */;
+				projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				AF9513E42E59D8B900550A10 /* MenuStats */,
@@ -379,56 +408,58 @@
 		};
 		AF9514082E59D8B900550A10 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = MenuStats/MenuStats.entitlements;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.MenuStats;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				REGISTER_APP_GROUPS = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 6.0;
-			};
+				buildSettings = {
+					ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+					ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+					CODE_SIGN_ENTITLEMENTS = MenuStats/MenuStats.entitlements;
+					"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+						CODE_SIGN_STYLE = Automatic;
+						CURRENT_PROJECT_VERSION = 1;
+						ENABLE_USER_SCRIPT_SANDBOXING = NO;
+						GENERATE_INFOPLIST_FILE = YES;
+						INFOPLIST_KEY_LSUIElement = YES;
+						INFOPLIST_KEY_NSHumanReadableCopyright = "";
+						LD_RUNPATH_SEARCH_PATHS = (
+							"$(inherited)",
+							"@executable_path/../Frameworks",
+						);
+						MACOSX_DEPLOYMENT_TARGET = 13.0;
+						MARKETING_VERSION = 1.0;
+						PRODUCT_BUNDLE_IDENTIFIER = com.example.MenuStats;
+						PRODUCT_NAME = "$(TARGET_NAME)";
+						REGISTER_APP_GROUPS = YES;
+						SWIFT_EMIT_LOC_STRINGS = YES;
+						SWIFT_VERSION = 6.0;
+					};
 			name = Debug;
 		};
 		AF9514092E59D8B900550A10 /* Release */ = {
 			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = MenuStats/MenuStats.entitlements;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.MenuStats;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				REGISTER_APP_GROUPS = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 6.0;
+				buildSettings = {
+					ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+					ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+					CODE_SIGN_ENTITLEMENTS = MenuStats/MenuStats.entitlements;
+					"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+						CODE_SIGN_STYLE = Automatic;
+						CURRENT_PROJECT_VERSION = 1;
+						ENABLE_USER_SCRIPT_SANDBOXING = NO;
+						GENERATE_INFOPLIST_FILE = YES;
+						INFOPLIST_KEY_LSUIElement = YES;
+						INFOPLIST_KEY_NSHumanReadableCopyright = "";
+						LD_RUNPATH_SEARCH_PATHS = (
+							"$(inherited)",
+							"@executable_path/../Frameworks",
+						);
+						MACOSX_DEPLOYMENT_TARGET = 13.0;
+						MARKETING_VERSION = 1.0;
+						PRODUCT_BUNDLE_IDENTIFIER = com.example.MenuStats;
+						PRODUCT_NAME = "$(TARGET_NAME)";
+						REGISTER_APP_GROUPS = YES;
+						SWIFT_EMIT_LOC_STRINGS = YES;
+						SWIFT_VERSION = 6.0;
+					};
+				name = Release;
 			};
-			name = Release;
-		};
 		AF9514192E59D96100550A10 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -475,6 +506,13 @@
 		};
 /* End XCBuildConfiguration section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		B0A000022E5A000100000001 /* XCLocalSwiftPackageReference "../macmon/bindings/swift" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../macmon/bindings/swift;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCConfigurationList section */
 		AF9513E02E59D8B900550A10 /* Build configuration list for PBXProject "MenuStats" */ = {
 			isa = XCConfigurationList;
@@ -513,6 +551,14 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-	};
+
+/* Begin XCSwiftPackageProductDependency section */
+		B0A000032E5A000100000001 /* MacmonSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B0A000022E5A000100000001 /* XCLocalSwiftPackageReference "../macmon/bindings/swift" */;
+			productName = MacmonSwift;
+		};
+/* End XCSwiftPackageProductDependency section */
+		};
 	rootObject = AF9513DD2E59D8B900550A10 /* Project object */;
 }
