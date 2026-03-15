@@ -1,9 +1,11 @@
 PROJECT := MenuStats.xcodeproj
 CONFIGURATION ?= Debug
 DERIVED_DATA ?= .build
-DESTINATION ?= platform=macOS
+DESTINATION ?= platform=macOS,arch=arm64
 POWERMETRICS_INTERVAL ?= 500
 XCODEBUILD_FLAGS := \
+	-quiet \
+	-hideShellScriptEnvironment \
 	ENABLE_CODE_COVERAGE=NO \
 	CLANG_COVERAGE_MAPPING=NO \
 	GCC_GENERATE_TEST_COVERAGE_FILES=NO

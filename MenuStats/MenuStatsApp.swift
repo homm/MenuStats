@@ -4,6 +4,16 @@ import MacmonSwift
 
 let log = Logger(subsystem: "com.user.MenuStats", category: "stream")
 
+enum AppSettings {
+    static let defaultMetricsIntervalMs = 2000
+    static let metricsIntervalKey = "metricsIntervalMs"
+
+    static var savedMetricsIntervalMs: Int {
+        let value = UserDefaults.standard.integer(forKey: metricsIntervalKey)
+        return value == 0 ? defaultMetricsIntervalMs : value
+    }
+}
+
 
 // MARK: - DI: точка доступа к лог-тексту и процессу
 
@@ -16,7 +26,7 @@ final class AppDependencies: ObservableObject {
     @Published var metricsError: String = ""
     weak var log: LogTextView.Coordinator?
     private var pendingLines: [String] = []
-    private var metricsIntervalMs: Int = 2000
+    private var metricsIntervalMs: Int = AppSettings.savedMetricsIntervalMs
     private var metricsTask: Task<Void, Never>?
     let streamer = StreamedProcess()
 
@@ -111,7 +121,8 @@ final class AppDependencies: ObservableObject {
 struct ContentView: View {
     @ObservedObject private var dependencies = AppDependencies.shared
     @State private var capacity: Int = 1000
-    @State private var interval: Int = 2000
+    @AppStorage(AppSettings.metricsIntervalKey)
+    private var interval: Int = AppSettings.defaultMetricsIntervalMs
     @State private var lastBatteryStatus: String = ""
 
     var body: some View {
@@ -129,7 +140,7 @@ struct ContentView: View {
                     .labelsHidden()
                 Text("\(capacity) lines")
                 Spacer()
-                Button("Close") { NSApp.terminate(nil) }
+                Button("⏼") { NSApp.terminate(nil) }
             }
             .padding(.bottom, 4)
 
@@ -183,12 +194,19 @@ struct ContentView: View {
 
             HStack {
                 Text("Interval:")
-                Stepper("Interval",
-                        value: $interval,
-                        in: 100...10_000,
-                        step: 100)
-                .labelsHidden()
-                Text("\(interval) ms")
+                Button("-") {
+                    interval = fasterInterval(from: interval)
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut("-", modifiers: [])
+                Text("/")
+                    .foregroundStyle(.secondary)
+                Button("+") {
+                    interval = slowerInterval(from: interval)
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut("=", modifiers: [])
+                Text(intervalLabel)
                 Button("Restart") {
                     dependencies.restartStream(interval)
                 }
@@ -208,6 +226,7 @@ struct ContentView: View {
         }
         .padding(12)
         .onAppear {
+            dependencies.updateMetricsInterval(interval)
             dependencies.log?.scrollVerticallyToBottom()
             DispatchQueue.global(qos: .utility).async {
                 if let exeDir = Bundle.main.executableURL?.deletingLastPathComponent() {
@@ -233,17 +252,36 @@ struct ContentView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
-}
 
-// MARK: - App entry (MenuBarExtra ensures icon exists)
+    private var intervalLabel: String {
+        if interval < 1_000 {
+            return "\(interval) ms"
+        }
+        return String(format: "%.2f s", Double(interval) / 1000.0)
+    }
+
+    private static let minIntervalMs = 100
+    private static let snapStepMs = 250
+    private static let largeStepMs = 1_000
+    private static let largeThresholdMs = 5_000
+    private static let maxIntervalMs = 10_000
+
+    private func slowerInterval(from current: Int) -> Int {
+        let step = current >= Self.largeThresholdMs ? Self.largeStepMs : Self.snapStepMs
+        return min(((current + step) / step) * step, Self.maxIntervalMs)
+    }
+
+    private func fasterInterval(from current: Int) -> Int {
+        let step = current > Self.largeThresholdMs ? Self.largeStepMs : Self.snapStepMs
+        return max((max(current - step, 0) + step - 1) / step * step, Self.minIntervalMs)
+    }
+}
 
 struct WindowConfigurator: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         DispatchQueue.main.async {
             guard let window = view.window else { return }
-
-            // Разрешаем ресайз
             window.styleMask.insert(.resizable)
         }
         return view
@@ -254,14 +292,15 @@ struct WindowConfigurator: NSViewRepresentable {
 
 @main
 struct MenuStatsApp: App {
+
     init() {
-        AppDependencies.shared.restartStream(2000)
+        AppDependencies.shared.restartStream(AppSettings.savedMetricsIntervalMs)
     }
 
     var body: some Scene {
         MenuBarExtra("MenuStats", systemImage: "chart.bar.xaxis") {
             ContentView()
-                .frame(minWidth: 420, minHeight: 600)
+                .frame(minWidth: 420, minHeight: 400)
                 .background(WindowConfigurator())
         }
         .menuBarExtraStyle(.window)
