@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import Charts
 import MacmonSwift
@@ -10,6 +11,14 @@ enum AppSettings {
         let value = UserDefaults.standard.integer(forKey: metricsIntervalKey)
         return value == 0 ? defaultMetricsIntervalMs : value
     }
+}
+
+enum AppPresentation {
+    static let windowMinSize = CGSize(width: 420, height: 320)
+    static let statusItemSystemImageName = "chart.bar.xaxis"
+    static let statusItemFallbackTitle = "MS"
+    static let statusItemToolTip = "MenuStats"
+    static let pinnedWindowTitle = "MenuStats"
 }
 
 
@@ -136,6 +145,7 @@ struct ContentView: View {
     }
 
     @ObservedObject private var dependencies = AppDependencies.shared
+    @ObservedObject var presentationState: MenuPresentationState
     @AppStorage(AppSettings.metricsIntervalKey)
     private var interval: Int = AppSettings.defaultMetricsIntervalMs
     @State private var lastBatteryStatus: String = ""
@@ -148,6 +158,18 @@ struct ContentView: View {
                 Text(dependencies.socSummary)
                     .foregroundStyle(.secondary)
                 Spacer()
+                Toggle(
+                    isOn: Binding(
+                        get: { presentationState.mode == .pinned },
+                        set: { isPinned in
+                            presentationState.setPresentationMode(isPinned ? .pinned : .attached)
+                        }
+                    )
+                ) {
+                    Image(systemName: "pin")
+                }
+                    .toggleStyle(.button)
+                    .help(presentationState.mode == .pinned ? "Attach to menu bar" : "Keep window open")
                 Button("⏼") { NSApp.terminate(nil) }
             }
             .padding(.bottom, 4)
@@ -247,6 +269,7 @@ struct ContentView: View {
 
         }
         .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             dependencies.updateMetricsInterval(interval)
             DispatchQueue.global(qos: .utility).async {
@@ -342,27 +365,46 @@ struct ContentView: View {
     }
 }
 
-struct WindowConfigurator: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async {
-            guard let window = view.window else { return }
-            window.styleMask.insert(.resizable)
-        }
-        return view
-    }
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var presentationController: MenuPresentationController<ContentView>?
 
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        presentationController = MenuPresentationController(
+            content: { presentationState in
+                ContentView(presentationState: presentationState)
+            },
+            configureStatusItem: { statusItem in
+                guard let button = statusItem.button else { return }
+
+                if let image = NSImage(
+                    systemSymbolName: AppPresentation.statusItemSystemImageName,
+                    accessibilityDescription: AppPresentation.statusItemToolTip
+                ) {
+                    image.isTemplate = true
+                    button.image = image
+                    button.title = ""
+                } else {
+                    button.title = AppPresentation.statusItemFallbackTitle
+                }
+
+                button.toolTip = AppPresentation.statusItemToolTip
+            },
+            configureWindow: { window in
+                window.title = AppPresentation.pinnedWindowTitle
+                window.setContentSize(AppPresentation.windowMinSize)
+                window.minSize = AppPresentation.windowMinSize
+            }
+        )
+    }
 }
 
 @main
 struct MenuStatsApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     var body: some Scene {
-        MenuBarExtra("MenuStats", systemImage: "chart.bar.xaxis") {
-            ContentView()
-                .frame(minWidth: 420, minHeight: 320)
-                .background(WindowConfigurator())
+        Settings {
+            EmptyView()
         }
-        .menuBarExtraStyle(.window)
     }
 }
