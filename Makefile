@@ -9,8 +9,10 @@ PRODUCTS_DIR = $(DERIVED_DATA)/Build/Products/$(CONFIGURATION)
 APP_PATH = $(PRODUCTS_DIR)/MenuStats.app
 APP_EXEC_PATH = $(APP_PATH)/Contents/MacOS/MenuStats
 BATTERY_PATH = $(PRODUCTS_DIR)/battery_tracker
+PROFILE_TRACE ?= $(DERIVED_DATA)/MenuStats-Time-Profiler.trace
+PROFILE_TEMPLATE ?= Time Profiler
 
-.PHONY: help app run open-app battery run-battery battery-watch benchmarks clean
+.PHONY: help app run open-app battery run-battery battery-watch benchmarks profile clean
 
 help:
 		@printf '%s\n' \
@@ -20,6 +22,7 @@ help:
 			'make battery        Build battery_tracker' \
 			'make run-battery    Build and run battery_tracker' \
 			'make battery-watch  Build and run battery_tracker watch' \
+			'make profile        Build MenuStats and launch xctrace Time Profiler' \
 			'make benchmarks     Run charts benchmarks' \
 			'make clean          Remove $(DERIVED_DATA)'
 
@@ -33,11 +36,24 @@ run: app
 	$(APP_EXEC_PATH)
 
 open-app: app
-	open "$(abspath $(APP_PATH))"
+	open "$(APP_PATH)"
 
 benchmarks:
 	swift run -c release --package-path Benchmarks MenuStatsBenchmarks \
 		--time-unit us --columns name,time,throughput,std,iterations
+
+profile: CONFIGURATION=Release
+profile: app
+	rm -rf "$(PROFILE_TRACE)"
+	@set -e; \
+	"$(APP_EXEC_PATH)" & \
+	app_pid=$$!; \
+	echo "Profiling PID $$app_pid"; \
+	xcrun xctrace record \
+	--template "$(PROFILE_TEMPLATE)" \
+	--output "$(PROFILE_TRACE)" \
+	--attach "$$app_pid"; \
+	open "$(PROFILE_TRACE)"
 
 battery:
 	xcodebuild -project $(PROJECT) build \

@@ -304,7 +304,7 @@ final class AppDependencies: ObservableObject {
         guard metricsTask == nil else { return }
         metricsError = ""
 
-        metricsTask = Task.detached(priority: .utility) {
+        metricsTask = Task.detached(priority: .background) {
             let clock = ContinuousClock()
             var lastUpdateStarted = clock.now
 
