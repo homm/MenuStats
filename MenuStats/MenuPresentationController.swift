@@ -9,6 +9,7 @@ enum PresentationMode: Equatable {
 @MainActor
 final class MenuPresentationState: ObservableObject {
     @Published private(set) var mode: PresentationMode = .attached
+    @Published private(set) var isWindowVisible: Bool = false
 
     private var onModeChange: ((PresentationMode) -> Void)?
 
@@ -20,6 +21,11 @@ final class MenuPresentationState: ObservableObject {
 
     fileprivate func bind(onModeChange: @escaping (PresentationMode) -> Void) {
         self.onModeChange = onModeChange
+    }
+
+    fileprivate func setWindowVisible(_ isVisible: Bool) {
+        guard isWindowVisible != isVisible else { return }
+        isWindowVisible = isVisible
     }
 }
 
@@ -117,12 +123,14 @@ final class MenuPresentationController<Content: View>: NSObject, NSWindowDelegat
         }
         managedWindow.makeKeyAndOrderFront(nil)
         managedWindow.orderFrontRegardless()
+        presentationState.setWindowVisible(true)
         NSApp.activate(ignoringOtherApps: true)
         syncActivationPolicy()
     }
 
     private func hideWindow() {
         managedWindow.orderOut(nil)
+        presentationState.setWindowVisible(false)
         syncActivationPolicy()
     }
 

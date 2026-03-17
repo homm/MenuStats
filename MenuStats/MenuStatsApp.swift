@@ -26,6 +26,60 @@ enum AppPresentation {
     static let pinnedWindowTitle = "MenuStats"
 }
 
+private struct PowerSeriesDescriptor: Identifiable {
+    let id: String
+    let title: String
+    let color: Color
+    let metricKeyPath: KeyPath<PowerMetrics, Float>
+
+    func watts(from metrics: Metrics) -> Double {
+        Double(metrics.power[keyPath: metricKeyPath])
+    }
+}
+
+private struct PowerChartSample: Identifiable {
+    let sampleID: Int
+    let metrics: Metrics
+
+    var id: Int { sampleID }
+}
+
+@MainActor
+private enum PowerChartDefinition {
+    static let series: [PowerSeriesDescriptor] = [
+        PowerSeriesDescriptor(
+            id: "board",
+            title: "BOARD",
+            color: Color(red: 0.12, green: 0.72, blue: 0.40),
+            metricKeyPath: \.board
+        ),
+        PowerSeriesDescriptor(
+            id: "package",
+            title: "PKG",
+            color: Color(red: 0.13, green: 0.48, blue: 0.97),
+            metricKeyPath: \.package
+        ),
+        PowerSeriesDescriptor(
+            id: "cpu",
+            title: "CPU",
+            color: Color(red: 0.32, green: 0.74, blue: 0.98),
+            metricKeyPath: \.cpu
+        ),
+        PowerSeriesDescriptor(
+            id: "ane",
+            title: "ANE",
+            color: Color(red: 0.98, green: 0.58, blue: 0.02),
+            metricKeyPath: \.ane
+        ),
+        PowerSeriesDescriptor(
+            id: "gpu",
+            title: "GPU",
+            color: Color(red: 0.98, green: 0.22, blue: 0.44),
+            metricKeyPath: \.gpu
+        ),
+    ]
+}
+
 
 // MARK: - DI
 
@@ -37,8 +91,11 @@ final class AppDependencies: ObservableObject {
     @Published var socSummary: String = ""
     @Published var latestMetrics: Metrics?
     @Published var metricsError: String = ""
-    fileprivate private(set) var metricsBuffer = MetricsRingBuffer(capacity: 120)
+    fileprivate private(set) var powerChartBuffer = RingBuffer<PowerChartSample>(capacity: 180)
     private var metricsTask: Task<Void, Never>?
+    private var latestCollectedMetrics: Metrics?
+    private var latestCollectedMetricsError: String = ""
+    private var isContentVisible: Bool = false
 
     private init() {
         startMetricsLoop()
@@ -75,19 +132,39 @@ final class AppDependencies: ObservableObject {
 
                     let metrics = try sampler.metrics()
                     await MainActor.run {
-                        AppDependencies.shared.metricsBuffer.append(metrics)
-                        AppDependencies.shared.latestMetrics = metrics
-                        AppDependencies.shared.metricsError = ""
+                        let sampleID = AppDependencies.shared.powerChartBuffer.appendedCount
+                        let sample = PowerChartSample(sampleID: sampleID, metrics: metrics)
+                        AppDependencies.shared.powerChartBuffer.append(sample)
+                        AppDependencies.shared.latestCollectedMetrics = metrics
+                        AppDependencies.shared.latestCollectedMetricsError = ""
+                        AppDependencies.shared.publishMetricsStateIfVisible()
                     }
                 }
             } catch {
                 await MainActor.run {
-                    AppDependencies.shared.latestMetrics = nil
-                    AppDependencies.shared.metricsError = "Macmon metrics error: \(error)"
+                    AppDependencies.shared.latestCollectedMetrics = nil
+                    AppDependencies.shared.latestCollectedMetricsError = "Macmon metrics error: \(error)"
+                    AppDependencies.shared.publishMetricsStateIfVisible()
                     AppDependencies.shared.metricsTask = nil
                 }
             }
         }
+    }
+
+    func setContentVisible(_ isVisible: Bool) {
+        guard isContentVisible != isVisible else { return }
+        isContentVisible = isVisible
+
+        if isVisible {
+            latestMetrics = latestCollectedMetrics
+            metricsError = latestCollectedMetricsError
+        }
+    }
+
+    private func publishMetricsStateIfVisible() {
+        guard isContentVisible else { return }
+        latestMetrics = latestCollectedMetrics
+        metricsError = latestCollectedMetricsError
     }
 
     private func loadSocInfo() {
@@ -155,62 +232,13 @@ final class AppDependencies: ObservableObject {
 
 // MARK: - SwiftUI content for the popover/window
 struct ContentView: View {
-    private struct PowerSeriesDescriptor: Identifiable {
-        let id: String
-        let title: String
-        let color: Color
-        let metricKeyPath: KeyPath<PowerMetrics, Float>
-
-        func watts(from metrics: Metrics) -> Double {
-            Double(metrics.power[keyPath: metricKeyPath])
-        }
-    }
-
-    private struct PowerPoint: Identifiable {
-        var id: String { "\(sample)-\(series.id)" }
-        let sample: Int
-        let series: PowerSeriesDescriptor
-        let watts: Double
-    }
-
-    private static let powerSeries: [PowerSeriesDescriptor] = [
-        PowerSeriesDescriptor(
-            id: "board",
-            title: "BOARD",
-            color: Color(red: 0.12, green: 0.72, blue: 0.40),
-            metricKeyPath: \.board
-        ),
-        PowerSeriesDescriptor(
-            id: "package",
-            title: "PKG",
-            color: Color(red: 0.13, green: 0.48, blue: 0.97),
-            metricKeyPath: \.package
-        ),
-        PowerSeriesDescriptor(
-            id: "cpu",
-            title: "CPU",
-            color: Color(red: 0.32, green: 0.74, blue: 0.98),
-            metricKeyPath: \.cpu
-        ),
-        PowerSeriesDescriptor(
-            id: "ane",
-            title: "ANE",
-            color: Color(red: 0.98, green: 0.58, blue: 0.02),
-            metricKeyPath: \.ane
-        ),
-        PowerSeriesDescriptor(
-            id: "gpu",
-            title: "GPU",
-            color: Color(red: 0.98, green: 0.22, blue: 0.44),
-            metricKeyPath: \.gpu
-        ),
-    ]
-
     @ObservedObject private var dependencies = AppDependencies.shared
     @ObservedObject var presentationState: MenuPresentationState
     @State private var lastBatteryStatus: String = ""
 
     var body: some View {
+        let powerChartSamples = dependencies.powerChartBuffer.snapshot()
+
         VStack(spacing: 8) {
             HStack {
                 Text(dependencies.chipName ?? "MenuStats")
@@ -248,23 +276,27 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                if dependencies.metricsBuffer.count > 0 {
+                if !powerChartSamples.isEmpty {
                     HStack(alignment: .top) {
-                        Chart(powerHistory) { point in
-                            LineMark(
-                                x: .value("Sample", point.sample),
-                                y: .value("Watts", point.watts),
-                            )
-                                .foregroundStyle(by: .value("Series", point.series.title))
-                                .interpolationMethod(.monotone)
-                                .lineStyle(StrokeStyle(lineWidth: 1))
+                        Chart {
+                            ForEach(powerChartSamples) { sample in
+                                ForEach(PowerChartDefinition.series) { series in
+                                    LineMark(
+                                        x: .value("Sample", sample.sampleID),
+                                        y: .value("Watts", series.watts(from: sample.metrics)),
+                                    )
+                                        .foregroundStyle(by: .value("Series", series.title))
+                                        .interpolationMethod(.monotone)
+                                        .lineStyle(StrokeStyle(lineWidth: 1))
+                                }
+                            }
                         }
                             .chartForegroundStyleScale(
-                                domain: Self.powerSeries.map(\.title),
-                                range: Self.powerSeries.map(\.color)
+                                domain: PowerChartDefinition.series.map(\.title),
+                                range: PowerChartDefinition.series.map(\.color)
                             )
                             .chartLegend(position: .top, alignment: .trailing, spacing: 10)
-                            .chartXScale(domain: 0...max(dependencies.metricsBuffer.capacity - 1, 0))
+                            .chartXScale(domain: powerChartXDomain)
                             .chartYAxis { AxisMarks(position: .leading) }
                             .chartXAxis(.hidden)
                             .frame(maxWidth: .infinity)
@@ -273,7 +305,7 @@ struct ContentView: View {
                         if let metrics = dependencies.latestMetrics {
                             VStack(alignment: .leading, spacing: 0) {
                                 Spacer()
-                                ForEach(Self.powerSeries) { series in
+                                ForEach(PowerChartDefinition.series) { series in
                                     Text(formattedWatts(series.watts(from: metrics)))
                                         .font(.system(.footnote, design: .monospaced))
                                         .fontWeight(.bold)
@@ -345,6 +377,9 @@ struct ContentView: View {
                 }
             }
         }
+        .onChange(of: presentationState.isWindowVisible, initial: true) { _, isVisible in
+            dependencies.setContentVisible(isVisible)
+        }
     }
 
     private func formattedWatts(_ value: Double) -> String {
@@ -359,13 +394,10 @@ struct ContentView: View {
         return String(format: "%.2f s", Double(interval) / 1000.0)
     }
 
-    private var powerHistory: [PowerPoint] {
-        dependencies.metricsBuffer.snapshot().enumerated().flatMap { idx, metrics in
-            Self.powerSeries.map { series in
-                PowerPoint(sample: idx, series: series, watts: series.watts(from: metrics))
-            }
-        }
-    }
+    private var powerChartXDomain: ClosedRange<Int> {
+        let buffer = dependencies.powerChartBuffer
+        let lowerBound = buffer.appendedCount - buffer.capacity
+        return lowerBound...buffer.appendedCount
     }
 }
 
