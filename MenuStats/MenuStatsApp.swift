@@ -19,25 +19,25 @@ enum AppSettings {
 }
 
 enum AppPresentation {
-    static let windowMinSize = CGSize(width: 420, height: 320)
+    static let windowMinSize = CGSize(width: 420, height: 460)
     static let statusItemSystemImageName = "chart.bar.xaxis"
     static let statusItemFallbackTitle = "MS"
     static let statusItemToolTip = "MenuStats"
     static let pinnedWindowTitle = "MenuStats"
 }
 
-private struct PowerSeriesDescriptor: Identifiable {
+private struct MetricsSeriesDescriptor: Identifiable {
     let id: String
     let title: String
     let color: Color
-    let metricKeyPath: KeyPath<PowerMetrics, Float>
+    let value: (Metrics) -> Double
 
-    func watts(from metrics: Metrics) -> Double {
-        Double(metrics.power[keyPath: metricKeyPath])
+    func value(from metrics: Metrics) -> Double {
+        value(metrics)
     }
 }
 
-private struct PowerChartSample: Identifiable {
+private struct MetricsSample: Identifiable {
     let sampleID: Int
     let metrics: Metrics
 
@@ -45,39 +45,69 @@ private struct PowerChartSample: Identifiable {
 }
 
 @MainActor
-private enum PowerChartDefinition {
-    static let series: [PowerSeriesDescriptor] = [
-        PowerSeriesDescriptor(
+private struct MetricsChartDefinition {
+    let title: String
+    let unitLabel: String
+    let series: [MetricsSeriesDescriptor]
+}
+
+@MainActor
+private enum MetricsChartDefinitions {
+    static let power = MetricsChartDefinition(
+        title: "Power",
+        unitLabel: "WATT",
+        series: [
+            MetricsSeriesDescriptor(
             id: "board",
             title: "BOARD",
             color: Color(red: 0.12, green: 0.72, blue: 0.40),
-            metricKeyPath: \.board
+            value: { Double($0.power.board) }
         ),
-        PowerSeriesDescriptor(
+            MetricsSeriesDescriptor(
             id: "package",
             title: "PKG",
             color: Color(red: 0.13, green: 0.48, blue: 0.97),
-            metricKeyPath: \.package
+            value: { Double($0.power.package) }
         ),
-        PowerSeriesDescriptor(
+            MetricsSeriesDescriptor(
             id: "cpu",
             title: "CPU",
             color: Color(red: 0.32, green: 0.74, blue: 0.98),
-            metricKeyPath: \.cpu
+            value: { Double($0.power.cpu) }
         ),
-        PowerSeriesDescriptor(
+            MetricsSeriesDescriptor(
             id: "ane",
             title: "ANE",
             color: Color(red: 0.98, green: 0.58, blue: 0.02),
-            metricKeyPath: \.ane
+            value: { Double($0.power.ane) }
         ),
-        PowerSeriesDescriptor(
+            MetricsSeriesDescriptor(
             id: "gpu",
             title: "GPU",
             color: Color(red: 0.98, green: 0.22, blue: 0.44),
-            metricKeyPath: \.gpu
+            value: { Double($0.power.gpu) }
         ),
-    ]
+        ]
+    )
+
+    static let temperature = MetricsChartDefinition(
+        title: "Temperature",
+        unitLabel: "°C",
+        series: [
+            MetricsSeriesDescriptor(
+                id: "cpu-average",
+                title: "CPU AVG",
+                color: Color(red: 0.98, green: 0.42, blue: 0.16),
+                value: { Double($0.temperature.cpuAverage) }
+            ),
+            MetricsSeriesDescriptor(
+                id: "gpu-average",
+                title: "GPU AVG",
+                color: Color(red: 0.85, green: 0.20, blue: 0.48),
+                value: { Double($0.temperature.gpuAverage) }
+            ),
+        ]
+    )
 }
 
 
@@ -91,7 +121,7 @@ final class AppDependencies: ObservableObject {
     @Published var socSummary: String = ""
     @Published var latestMetrics: Metrics?
     @Published var metricsError: String = ""
-    fileprivate private(set) var powerChartBuffer = RingBuffer<PowerChartSample>(capacity: 180)
+    fileprivate private(set) var metricsHistory = RingBuffer<MetricsSample>(capacity: 180)
     private var metricsTask: Task<Void, Never>?
     private var latestCollectedMetrics: Metrics?
     private var latestCollectedMetricsError: String = ""
@@ -132,9 +162,9 @@ final class AppDependencies: ObservableObject {
 
                     let metrics = try sampler.metrics()
                     await MainActor.run {
-                        let sampleID = AppDependencies.shared.powerChartBuffer.appendedCount
-                        let sample = PowerChartSample(sampleID: sampleID, metrics: metrics)
-                        AppDependencies.shared.powerChartBuffer.append(sample)
+                        let sampleID = AppDependencies.shared.metricsHistory.appendedCount
+                        let sample = MetricsSample(sampleID: sampleID, metrics: metrics)
+                        AppDependencies.shared.metricsHistory.append(sample)
                         AppDependencies.shared.latestCollectedMetrics = metrics
                         AppDependencies.shared.latestCollectedMetricsError = ""
                         AppDependencies.shared.publishMetricsStateIfVisible()
@@ -182,19 +212,19 @@ final class AppDependencies: ObservableObject {
         var parts = info.cpuDomains.compactMap { domain -> String? in
             let name = cpuDomainLabel(for: domain.name)
             guard !name.isEmpty else { return nil }
-            return "\(domain.units) \(name)"
+            return "\(domain.units)\(name)"
         }
-        parts.append("\(info.gpuCores) GPU cores")
-        return parts.joined(separator: ", ")
+        parts.append("\(info.gpuCores)G cores")
+        return parts.joined(separator: " ")
     }
 
     private func cpuDomainLabel(for rawName: String) -> String {
         let lower = rawName.lowercased()
         if lower == "ecpu" {
-            return "E-cores"
+            return "E"
         }
         if lower == "pcpu" {
-            return "P-cores"
+            return "P"
         }
         return rawName;
     }
@@ -229,6 +259,83 @@ final class AppDependencies: ObservableObject {
     private static let largeIntervalThresholdMs = 5_000
 }
 
+private struct MetricsChartSection: View {
+    let definition: MetricsChartDefinition
+    let samples: [MetricsSample]
+    let latestMetrics: Metrics?
+    let xDomain: ClosedRange<Int>
+    let valueFormatter: (Double) -> String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            if samples.isEmpty {
+                VStack(alignment: .leading) {
+                    Spacer().frame(height: 24)
+                    Text("Waiting for metrics...")
+                        .font(.system(.callout, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Chart {
+                    ForEach(samples) { sample in
+                        ForEach(definition.series.reversed()) { series in
+                            LineMark(
+                                x: .value("Sample", sample.sampleID),
+                                y: .value("Value", series.value(from: sample.metrics)),
+                            )
+                                .foregroundStyle(by: .value("Series", series.title))
+                                .interpolationMethod(.monotone)
+                                .lineStyle(StrokeStyle(lineWidth: 0.75))
+                        }
+                    }
+                }
+                    .chartForegroundStyleScale(
+                        domain: definition.series.map(\.title),
+                        range: definition.series.map(\.color)
+                    )
+                    .chartLegend(position: .top, alignment: .trailing, spacing: 10)
+                    .chartXScale(domain: xDomain)
+                    .chartYAxis {
+                        AxisMarks(position: .leading, values: .automatic(desiredCount: 7)) {value in
+                            AxisGridLine(
+                                stroke: value.as(Double.self) == 0
+                                    ? StrokeStyle(lineWidth: 1)
+                                    : StrokeStyle(lineWidth: 0.5, dash: [3, 2])
+                            )
+                            AxisValueLabel()
+                        }
+                    }
+                    .chartXAxis(.hidden)
+
+                if let latestMetrics {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Spacer()
+                        ForEach(definition.series) { series in
+                            Text(valueFormatter(series.value(from: latestMetrics)))
+                                .font(.system(.footnote, design: .monospaced))
+                                .fontWeight(.bold)
+                                .foregroundStyle(series.color)
+                        }
+                    }
+                }
+            }
+        }
+            .padding(.top, 2)
+            .overlay(alignment: .topLeading) {
+                HStack(alignment: .bottom) {
+                    Text(definition.title)
+                        .font(.headline)
+                    Spacer()
+                    Text(definition.unitLabel)
+                        .font(.system(.callout, design: .monospaced))
+                        .fontWeight(.bold)
+                        .foregroundStyle(.secondary)
+                }
+            }
+    }
+}
 
 // MARK: - SwiftUI content for the popover/window
 struct ContentView: View {
@@ -237,7 +344,7 @@ struct ContentView: View {
     @State private var lastBatteryStatus: String = ""
 
     var body: some View {
-        let powerChartSamples = dependencies.powerChartBuffer.snapshot()
+        let chartSamples = dependencies.metricsHistory.snapshot()
 
         VStack(spacing: 8) {
             HStack {
@@ -265,54 +372,37 @@ struct ContentView: View {
             Divider()
                 .background(Color(nsColor: .textColor))
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Power")
-                        .font(.headline)
-                    Spacer()
-                    Text("WATT")
-                        .font(.system(.callout, design: .monospaced))
-                        .fontWeight(.bold)
-                        .foregroundStyle(.secondary)
-                }
-
-                if !powerChartSamples.isEmpty {
-                    HStack(alignment: .top) {
-                        Chart {
-                            ForEach(powerChartSamples) { sample in
-                                ForEach(PowerChartDefinition.series) { series in
-                                    LineMark(
-                                        x: .value("Sample", sample.sampleID),
-                                        y: .value("Watts", series.watts(from: sample.metrics)),
-                                    )
-                                        .foregroundStyle(by: .value("Series", series.title))
-                                        .interpolationMethod(.monotone)
-                                        .lineStyle(StrokeStyle(lineWidth: 1))
-                                }
+            VStack(spacing: 8) {
+                GeometryReader { metrics in
+                    VStack(spacing: 18) {
+                        MetricsChartSection(
+                            definition: MetricsChartDefinitions.power,
+                            samples: chartSamples,
+                            latestMetrics: dependencies.latestMetrics,
+                            xDomain: chartXDomain,
+                            valueFormatter: formattedWatts
+                        )
+                            .frame(height: metrics.size.height * 0.55)
+                            .background {
+                                Color(.textBackgroundColor)
+                                .padding(.horizontal, -12)
+                                .padding(.vertical, -8)
                             }
-                        }
-                            .chartForegroundStyleScale(
-                                domain: PowerChartDefinition.series.map(\.title),
-                                range: PowerChartDefinition.series.map(\.color)
-                            )
-                            .chartLegend(position: .top, alignment: .trailing, spacing: 10)
-                            .chartXScale(domain: powerChartXDomain)
-                            .chartYAxis { AxisMarks(position: .leading) }
-                            .chartXAxis(.hidden)
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, -22)
+                        // Divider()
 
-                        if let metrics = dependencies.latestMetrics {
-                            VStack(alignment: .leading, spacing: 0) {
-                                Spacer()
-                                ForEach(PowerChartDefinition.series) { series in
-                                    Text(formattedWatts(series.watts(from: metrics)))
-                                        .font(.system(.footnote, design: .monospaced))
-                                        .fontWeight(.bold)
-                                        .foregroundStyle(series.color)
-                                }
+                        MetricsChartSection(
+                            definition: MetricsChartDefinitions.temperature,
+                            samples: chartSamples,
+                            latestMetrics: dependencies.latestMetrics,
+                            xDomain: chartXDomain,
+                            valueFormatter: formattedTemperature
+                        )
+                            .background {
+                                Color(.textBackgroundColor)
+                                .padding(.horizontal, -12)
+                                .padding(.vertical, -8)
                             }
-                        }
+                        // Divider()
                     }
                 }
 
@@ -322,17 +412,9 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                 } else if dependencies.latestMetrics == nil {
-                    Text("Waiting for metrics...")
-                        .font(.system(.callout, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                    Spacer()
+
                 }
             }
-                .background {
-                    Color(.textBackgroundColor)
-                        .padding(.horizontal, -12)
-                        .padding(.vertical, -8)
-                }
 
             Divider()
 
@@ -365,7 +447,7 @@ struct ContentView: View {
 
         }
         .padding(12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             DispatchQueue.global(qos: .utility).async {
                 if let exeDir = Bundle.main.executableURL?.deletingLastPathComponent() {
@@ -386,6 +468,10 @@ struct ContentView: View {
         String(format: "%6.2f", locale: Locale(identifier: "en_US_POSIX"), value)
     }
 
+    private func formattedTemperature(_ value: Double) -> String {
+        String(format: "%5.1f ", locale: Locale(identifier: "en_US_POSIX"), value)
+    }
+
     private var intervalLabel: String {
         let interval = dependencies.metricsIntervalMs
         if interval < 1_000 {
@@ -394,8 +480,8 @@ struct ContentView: View {
         return String(format: "%.2f s", Double(interval) / 1000.0)
     }
 
-    private var powerChartXDomain: ClosedRange<Int> {
-        let buffer = dependencies.powerChartBuffer
+    private var chartXDomain: ClosedRange<Int> {
+        let buffer = dependencies.metricsHistory
         let lowerBound = buffer.appendedCount - buffer.capacity
         return lowerBound...buffer.appendedCount
     }
