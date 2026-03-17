@@ -5,11 +5,16 @@ import MacmonSwift
 
 enum AppSettings {
     static let defaultMetricsIntervalMs = 2000
-    static let metricsIntervalKey = "metricsIntervalMs"
+    private static let metricsIntervalKey = "metricsIntervalMs"
 
-    static var savedMetricsIntervalMs: Int {
-        let value = UserDefaults.standard.integer(forKey: metricsIntervalKey)
-        return value == 0 ? defaultMetricsIntervalMs : value
+    static var metricsIntervalMs: Int {
+        get {
+            let value = UserDefaults.standard.integer(forKey: metricsIntervalKey)
+            return value == 0 ? defaultMetricsIntervalMs : value
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: metricsIntervalKey)
+        }
     }
 }
 
@@ -33,7 +38,6 @@ final class AppDependencies: ObservableObject {
     @Published var latestMetrics: Metrics?
     @Published var metricsError: String = ""
     fileprivate private(set) var metricsBuffer = MetricsRingBuffer(capacity: 120)
-    private var metricsIntervalMs: Int = AppSettings.savedMetricsIntervalMs
     private var metricsTask: Task<Void, Never>?
 
     private init() {
@@ -86,10 +90,6 @@ final class AppDependencies: ObservableObject {
         }
     }
 
-    func updateMetricsInterval(_ interval: Int) {
-        metricsIntervalMs = interval
-    }
-
     private func loadSocInfo() {
         do {
             let info = try Macmon.socInfo()
@@ -121,6 +121,35 @@ final class AppDependencies: ObservableObject {
         }
         return rawName;
     }
+
+    @Published var metricsIntervalMs: Int = AppSettings.metricsIntervalMs {
+        didSet {
+            AppSettings.metricsIntervalMs = metricsIntervalMs
+        }
+    }
+
+    func increaseMetricsInterval() {
+        let current = metricsIntervalMs
+        let step =
+            current >= Self.largeIntervalThresholdMs
+            ? Self.largeIntervalStepMs : Self.intervalStepMs
+        metricsIntervalMs = min(
+            ((metricsIntervalMs + step) / step) * step, Self.maxMetricsIntervalMs)
+    }
+
+    func decreaseMetricsInterval() {
+        let step =
+            metricsIntervalMs > Self.largeIntervalThresholdMs
+            ? Self.largeIntervalStepMs : Self.intervalStepMs
+        metricsIntervalMs = max(
+            (max(metricsIntervalMs - step, 0) + step - 1) / step * step, Self.minMetricsIntervalMs)
+    }
+
+    private static let minMetricsIntervalMs = 1
+    private static let maxMetricsIntervalMs = 10_000
+    private static let intervalStepMs = 250
+    private static let largeIntervalStepMs = 1_000
+    private static let largeIntervalThresholdMs = 5_000
 }
 
 
@@ -179,8 +208,6 @@ struct ContentView: View {
 
     @ObservedObject private var dependencies = AppDependencies.shared
     @ObservedObject var presentationState: MenuPresentationState
-    @AppStorage(AppSettings.metricsIntervalKey)
-    private var interval: Int = AppSettings.defaultMetricsIntervalMs
     @State private var lastBatteryStatus: String = ""
 
     var body: some View {
@@ -281,14 +308,14 @@ struct ContentView: View {
                 Text("Interval:")
                 Text(intervalLabel)
                 Button("–") {
-                    interval = fasterInterval(from: interval)
+                    dependencies.decreaseMetricsInterval()
                 }
                     .buttonStyle(.plain)
                     .keyboardShortcut("-", modifiers: [])
                 Text("/")
                     .foregroundStyle(.secondary)
                 Button("+") {
-                    interval = slowerInterval(from: interval)
+                    dependencies.increaseMetricsInterval()
                 }
                     .buttonStyle(.plain)
                     .keyboardShortcut("=", modifiers: [])
@@ -308,7 +335,6 @@ struct ContentView: View {
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
-            dependencies.updateMetricsInterval(interval)
             DispatchQueue.global(qos: .utility).async {
                 if let exeDir = Bundle.main.executableURL?.deletingLastPathComponent() {
                     let exe = exeDir.appendingPathComponent("battery_tracker").path
@@ -319,9 +345,6 @@ struct ContentView: View {
                 }
             }
         }
-        .onChange(of: interval) {
-            dependencies.updateMetricsInterval(interval)
-        }
     }
 
     private func formattedWatts(_ value: Double) -> String {
@@ -329,6 +352,7 @@ struct ContentView: View {
     }
 
     private var intervalLabel: String {
+        let interval = dependencies.metricsIntervalMs
         if interval < 1_000 {
             return "\(interval) ms"
         }
@@ -342,21 +366,6 @@ struct ContentView: View {
             }
         }
     }
-
-    private static let minIntervalMs = 100
-    private static let snapStepMs = 250
-    private static let largeStepMs = 1_000
-    private static let largeThresholdMs = 5_000
-    private static let maxIntervalMs = 10_000
-
-    private func slowerInterval(from current: Int) -> Int {
-        let step = current >= Self.largeThresholdMs ? Self.largeStepMs : Self.snapStepMs
-        return min(((current + step) / step) * step, Self.maxIntervalMs)
-    }
-
-    private func fasterInterval(from current: Int) -> Int {
-        let step = current > Self.largeThresholdMs ? Self.largeStepMs : Self.snapStepMs
-        return max((max(current - step, 0) + step - 1) / step * step, Self.minIntervalMs)
     }
 }
 
