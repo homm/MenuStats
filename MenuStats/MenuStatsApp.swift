@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import Charts
 import MacmonSwift
 
 enum AppSettings {
@@ -245,7 +244,7 @@ struct ContentView: View {
                             xDomain: chartXDomain,
                             valueFormatter: formattedTemperature,
                             desiredCount: 4,
-                            yScaleDomain: 30...110
+                            yStart: 30
                         )
                             .background {
                                 Color(.textBackgroundColor)
@@ -257,7 +256,7 @@ struct ContentView: View {
 
                 if dependencies.latestMetrics == nil && !dependencies.metricsError.isEmpty {
                     Text(dependencies.metricsError)
-                        .font(.system(.callout, design: .monospaced))
+                        .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                 }
@@ -287,7 +286,7 @@ struct ContentView: View {
                 Divider()
                 Text(lastBatteryStatus)
                     .textSelection(.enabled)
-                    .font(.system(.callout, design: .monospaced))
+                    .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }

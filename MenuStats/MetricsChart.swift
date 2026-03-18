@@ -1,6 +1,6 @@
 import AppKit
 import SwiftUI
-import Charts
+import DGCharts
 import MacmonSwift
 
 private enum MetricsChartPalette {
@@ -157,18 +157,20 @@ When usage is at 100%, the area reaches the line.
             ),
         ]
     )
+
     private static func cpuFrequencySeries(from metrics: Metrics) -> [MetricsSeriesDescriptor] {
         metrics.cpu.enumerated().map { index, cluster in
-            return MetricsSeriesDescriptor(
+            MetricsSeriesDescriptor(
                 id: "cpu-frequency-\(index)",
                 title: cluster.name,
                 color: MetricsChartPalette.cpuFrequencyPalette[
-                    index % MetricsChartPalette.cpuFrequencyPalette.count],
+                    index % MetricsChartPalette.cpuFrequencyPalette.count
+                ],
                 value: { metrics in
-                    return Double(metrics.cpu[index].frequencyMHz) / 1000
+                    Double(metrics.cpu[index].frequencyMHz) / 1000
                 },
                 usageValue: { metrics in
-                    return Double(metrics.cpu[index].usage)
+                    Double(metrics.cpu[index].usage)
                 }
             )
         }
@@ -176,16 +178,17 @@ When usage is at 100%, the area reaches the line.
 
     private static func gpuFrequencySeries(from metrics: Metrics) -> [MetricsSeriesDescriptor] {
         metrics.gpu.enumerated().map { index, cluster in
-            return MetricsSeriesDescriptor(
+            MetricsSeriesDescriptor(
                 id: "gpu-frequency-\(index)",
                 title: cluster.name,
                 color: MetricsChartPalette.gpuFrequencyPalette[
-                    index % MetricsChartPalette.gpuFrequencyPalette.count],
+                    index % MetricsChartPalette.gpuFrequencyPalette.count
+                ],
                 value: { metrics in
-                    return Double(metrics.gpu[index].frequencyMHz) / 1000
+                    Double(metrics.gpu[index].frequencyMHz) / 1000
                 },
                 usageValue: { metrics in
-                    return Double(metrics.gpu[index].usage)
+                    Double(metrics.gpu[index].usage)
                 }
             )
         }
@@ -205,14 +208,188 @@ When usage is at 100%, the area reaches the line.
     }
 }
 
-private extension View {
-    @ViewBuilder
-    func chartYScaleIfPresent(_ domain: ClosedRange<Double>?) -> some View {
-        if let domain {
-            self.chartYScale(domain: domain)
-        } else {
-            self
+private struct MetricsChartRenderSeries: Identifiable {
+    struct Point {
+        let x: Double
+        let y: Double
+    }
+
+    let id: String
+    let title: String
+    let color: NSColor
+    let linePoints: [Point]
+    let fillPoints: [Point]?
+}
+
+private extension MetricsChartRenderSeries {
+    var lineEntries: [ChartDataEntry] {
+        linePoints.map { ChartDataEntry(x: $0.x, y: $0.y) }
+    }
+
+    var fillEntries: [ChartDataEntry]? {
+        fillPoints?.map { ChartDataEntry(x: $0.x, y: $0.y) }
+    }
+}
+
+private extension Color {
+    var metricsNSColor: NSColor {
+        NSColor(self)
+    }
+}
+
+private struct MetricsChartRenderModel {
+    let series: [MetricsChartRenderSeries]
+
+    init(samples: [MetricsSample], series descriptors: [MetricsSeriesDescriptor]) {
+        self.series = descriptors.map { descriptor in
+            let linePoints = samples.map { sample in
+                MetricsChartRenderSeries.Point(
+                    x: Double(sample.sampleID),
+                    y: descriptor.value(sample.metrics)
+                )
+            }
+
+            let fillPoints = descriptor.usageValue.map { usageValue in
+                samples.map { sample in
+                    MetricsChartRenderSeries.Point(
+                        x: Double(sample.sampleID),
+                        y: usageValue(sample.metrics) * descriptor.value(sample.metrics)
+                    )
+                }
+            }
+
+            return MetricsChartRenderSeries(
+                id: descriptor.id,
+                title: descriptor.title,
+                color: descriptor.color.metricsNSColor,
+                linePoints: linePoints,
+                fillPoints: fillPoints
+            )
         }
+    }
+}
+
+private struct MetricsChartLegendItem: Identifiable {
+    let id: String
+    let title: String
+    let color: NSColor
+}
+
+private struct MetricsDGChartView: NSViewRepresentable {
+    let renderModel: MetricsChartRenderModel
+    let xDomain: ClosedRange<Int>
+    let yStart: Double
+    let desiredCount: Int
+    let lineWidth: Double
+
+    func makeNSView(context: Context) -> LineChartView {
+        let chartView = LineChartView()
+        chartView.drawBordersEnabled = false
+        chartView.drawGridBackgroundEnabled = false
+        chartView.chartDescription.enabled = false
+        chartView.scaleXEnabled = false
+        chartView.scaleYEnabled = false
+        chartView.minOffset = 0
+        chartView.extraTopOffset = 8
+
+        let xAxis = chartView.xAxis
+        xAxis.enabled = true
+        xAxis.drawLabelsEnabled = false
+        xAxis.drawAxisLineEnabled = false
+        xAxis.drawGridLinesEnabled = false
+
+        let rightAxis = chartView.rightAxis
+        rightAxis.enabled = false
+        return chartView
+    }
+
+    func updateNSView(_ chartView: LineChartView, context: Context) {
+        configureAxes(chartView)
+        configureLegend(chartView)
+        chartView.data = makeChartData()
+    }
+
+    private func configureAxes(_ chartView: LineChartView) {
+        let xAxis = chartView.xAxis
+        xAxis.axisMinimum = Double(xDomain.lowerBound)
+        xAxis.axisMaximum = Double(xDomain.upperBound)
+
+
+        let leftAxis = chartView.leftAxis
+        leftAxis.enabled = true
+        leftAxis.axisMinimum = yStart
+        leftAxis.axisMaximum = getYMax(chartView)
+        leftAxis.spaceTop = 0.05
+
+        leftAxis.drawLabelsEnabled = true
+        leftAxis.setLabelCount(desiredCount, force: false)
+        leftAxis.drawAxisLineEnabled = false
+        leftAxis.drawGridLinesEnabled = true
+        leftAxis.gridLineWidth = 0.5
+        leftAxis.gridLineDashLengths = [3, 2]
+        leftAxis.drawZeroLineEnabled = true
+        leftAxis.zeroLineWidth = 1
+        leftAxis.zeroLineDashLengths = nil
+    }
+
+    private func getYMax(_ chartView: LineChartView) -> Double {
+        let rawYMax = chartView.data?.getYMax(axis: .left) ?? 0
+        return pow(ceil(pow(rawYMax, 1.0 / 1.5)), 1.5)
+    }
+
+    private func makeChartData() -> LineChartData {
+        let fillDataSets = renderModel.series.compactMap(makeFillDataSet(for:))
+        let lineDataSets = renderModel.series.reversed().map(makeLineDataSet(for:))
+        return LineChartData(dataSets: fillDataSets + lineDataSets)
+    }
+
+    private func makeLineDataSet(for series: MetricsChartRenderSeries) -> LineChartDataSet {
+        let dataSet = LineChartDataSet(entries: series.lineEntries, label: series.title)
+        dataSet.mode = .linear
+        dataSet.drawValuesEnabled = false
+        dataSet.drawCirclesEnabled = false
+        dataSet.drawFilledEnabled = false
+        dataSet.lineWidth = lineWidth
+        dataSet.setColor(series.color)
+        dataSet.highlightEnabled = false
+        return dataSet
+    }
+
+    private func makeFillDataSet(for series: MetricsChartRenderSeries) -> LineChartDataSet? {
+        guard let fillEntries = series.fillEntries else { return nil }
+
+        let dataSet = LineChartDataSet(entries: fillEntries, label: series.title)
+        dataSet.mode = .linear
+        dataSet.drawValuesEnabled = false
+        dataSet.drawCirclesEnabled = false
+        dataSet.lineWidth = 0
+        dataSet.drawFilledEnabled = true
+        dataSet.fillColor = series.color
+        dataSet.fillAlpha = 0.3
+        dataSet.setColor(series.color)
+        dataSet.highlightEnabled = false
+        return dataSet
+    }
+
+    private func configureLegend(_ chartView: LineChartView) {
+        let legend = chartView.legend
+        legend.enabled = true
+        legend.horizontalAlignment = .right
+        legend.verticalAlignment = .top
+        legend.orientation = .horizontal
+        legend.drawInside = false
+        legend.form = .circle
+        legend.formSize = 8
+        legend.xEntrySpace = 10
+        legend.xOffset = 0
+        legend.yOffset = -1
+        legend.font = .systemFont(ofSize: 12)
+        legend.textColor = NSColor(Color.secondary)
+        legend.setCustom(entries: renderModel.series.map { series in
+            let entry = LegendEntry(label: series.title)
+            entry.formColor = series.color
+            return entry
+        })
     }
 }
 
@@ -223,13 +400,17 @@ struct MetricsChartSection: View {
     let xDomain: ClosedRange<Int>
     let valueFormatter: (Double) -> String
     var usageValueFormatter: ((Double) -> String)? = nil
-    var desiredCount = 7
+    var desiredCount = 6
     var lineWidth = 1.0
-    var yScaleDomain: ClosedRange<Double>? = nil
+    var yStart = 0.0
     @State private var isHelpPresented = false
 
     private var resolvedSeries: [MetricsSeriesDescriptor] {
         definition.resolvedSeries(from: latestMetrics ?? samples.last?.metrics)
+    }
+
+    private var renderModel: MetricsChartRenderModel {
+        MetricsChartRenderModel(samples: samples, series: resolvedSeries)
     }
 
     var body: some View {
@@ -238,13 +419,19 @@ struct MetricsChartSection: View {
                 VStack(alignment: .leading) {
                     Spacer().frame(height: 24)
                     Text("Waiting for metrics...")
-                        .font(.system(.callout, design: .monospaced))
+                        .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(.secondary)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                chartView
+                MetricsDGChartView(
+                    renderModel: renderModel,
+                    xDomain: xDomain,
+                    yStart: yStart,
+                    desiredCount: desiredCount,
+                    lineWidth: lineWidth
+                )
                 if let latestMetrics {
                     latestValuesView(metrics: latestMetrics)
                 }
@@ -252,56 +439,6 @@ struct MetricsChartSection: View {
         }
         .padding(.top, 2)
         .overlay(alignment: .topLeading, content: headerView)
-    }
-
-    private var chartView: some View {
-        Chart {
-            ForEach(resolvedSeries) { series in
-                if let usageValue = series.usageValue {
-                    ForEach(samples, id: \.id) { sample in
-                        AreaMark(
-                            x: .value("Sample", sample.sampleID),
-                            yStart: .value("Usage Base", 0),
-                            yEnd: .value(
-                                "Usage", usageValue(sample.metrics) * series.value(sample.metrics)),
-                        )
-                        .foregroundStyle(by: .value("Series", series.title))
-                        .opacity(0.3)
-                        .interpolationMethod(.linear)
-                    }
-                }
-            }
-
-            ForEach(resolvedSeries.reversed()) { series in
-                ForEach(samples, id: \.id) { sample in
-                    LineMark(
-                        x: .value("Sample", sample.sampleID),
-                        y: .value("Value", series.value(sample.metrics)),
-                    )
-                    .foregroundStyle(by: .value("Series", series.title))
-                    .interpolationMethod(.monotone)
-                    .lineStyle(StrokeStyle(lineWidth: lineWidth))
-                }
-            }
-        }
-        .chartForegroundStyleScale(
-            domain: resolvedSeries.map(\.title),
-            range: resolvedSeries.map(\.color)
-        )
-        .chartLegend(position: .top, alignment: .trailing, spacing: 10)
-        .chartXScale(domain: xDomain)
-        .chartYScaleIfPresent(yScaleDomain)
-        .chartYAxis {
-            AxisMarks(position: .leading, values: .automatic(desiredCount: desiredCount)) { value in
-                AxisGridLine(
-                    stroke: value.as(Double.self) == 0
-                        ? StrokeStyle(lineWidth: 1)
-                        : StrokeStyle(lineWidth: 0.5, dash: [3, 2])
-                )
-                AxisValueLabel()
-            }
-        }
-        .chartXAxis(.hidden)
     }
 
     private func latestValuesView(metrics: Metrics) -> some View {
@@ -342,7 +479,7 @@ struct MetricsChartSection: View {
             }
             Spacer()
             Text(definition.unitLabel)
-                .font(.system(.callout, design: .monospaced))
+                .font(.system(size: 12, design: .monospaced))
                 .fontWeight(.bold)
                 .foregroundStyle(.secondary)
         }
@@ -367,7 +504,6 @@ private struct ChartHelpPopover: View {
 
     var body: some View {
         Text(attributedMarkdown)
-            .font(.system(.callout))
             .multilineTextAlignment(.leading)
             .textSelection(.enabled)
             .frame(width: 260, alignment: .leading)

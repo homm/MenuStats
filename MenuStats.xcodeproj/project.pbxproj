@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		B0A000012E5A000100000001 /* MacmonSwift in Frameworks */ = {isa = PBXBuildFile; productRef = B0A000032E5A000100000001 /* MacmonSwift */; };
+		B0A000042E5A000100000001 /* DGCharts in Frameworks */ = {isa = PBXBuildFile; productRef = B0A000062E5A000100000001 /* DGCharts */; };
 		AFFC83392E59EAD40095EE6D /* battery_tracker in CopyFiles */ = {isa = PBXBuildFile; fileRef = AFFC83322E59EA600095EE6D /* battery_tracker */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -78,6 +79,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B0A000042E5A000100000001 /* DGCharts in Frameworks */,
 				B0A000012E5A000100000001 /* MacmonSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -132,6 +134,7 @@
 			);
 				name = MenuStats;
 				packageProductDependencies = (
+					B0A000062E5A000100000001 /* DGCharts */,
 					B0A000032E5A000100000001 /* MacmonSwift */,
 				);
 				productName = MenuStats;
@@ -188,6 +191,7 @@
 				mainGroup = AF9513DC2E59D8B900550A10;
 				minimizedProjectReferenceProxies = 1;
 				packageReferences = (
+					B0A000052E5A000100000001 /* XCRemoteSwiftPackageReference "Charts" */,
 					B0A000022E5A000100000001 /* XCLocalSwiftPackageReference "../macmon/bindings/swift" */,
 				);
 				preferredProjectObjectVersion = 77;
@@ -430,6 +434,17 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		B0A000052E5A000100000001 /* XCRemoteSwiftPackageReference "Charts" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ChartsOrg/Charts.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.1.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCConfigurationList section */
 		AF9513E02E59D8B900550A10 /* Build configuration list for PBXProject "MenuStats" */ = {
 			isa = XCConfigurationList;
@@ -465,6 +480,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = B0A000022E5A000100000001 /* XCLocalSwiftPackageReference "../macmon/bindings/swift" */;
 			productName = MacmonSwift;
+		};
+		B0A000062E5A000100000001 /* DGCharts */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B0A000052E5A000100000001 /* XCRemoteSwiftPackageReference "Charts" */;
+			productName = DGCharts;
 		};
 /* End XCSwiftPackageProductDependency section */
 		};
