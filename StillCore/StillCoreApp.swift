@@ -211,7 +211,6 @@ struct ContentView: View {
                         MetricsChartSection(
                             definition: MetricsChartDefinitions.power,
                             samples: chartSamples,
-                            latestMetrics: dependencies.latestMetrics,
                             xDomain: chartXDomain,
                             valueFormatter: formattedWatts
                         )
@@ -225,7 +224,6 @@ struct ContentView: View {
                         MetricsChartSection(
                             definition: MetricsChartDefinitions.frequency,
                             samples: chartSamples,
-                            latestMetrics: dependencies.latestMetrics,
                             xDomain: chartXDomain,
                             valueFormatter: formattedFrequencyMHz,
                             usageValueFormatter: formattedUsage
@@ -240,7 +238,6 @@ struct ContentView: View {
                         MetricsChartSection(
                             definition: MetricsChartDefinitions.temperature,
                             samples: chartSamples,
-                            latestMetrics: dependencies.latestMetrics,
                             xDomain: chartXDomain,
                             valueFormatter: formattedTemperature,
                             desiredCount: 4,
