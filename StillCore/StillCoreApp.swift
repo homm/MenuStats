@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import MacmonSwift
 
@@ -23,6 +24,7 @@ enum AppPresentation {
     static let statusItemFallbackTitle = "MS"
     static let statusItemToolTip = "StillCore"
     static let pinnedWindowTitle = "StillCore"
+    static let chartHistoryCapacity = 180
 }
 
 // MARK: - DI
@@ -35,11 +37,15 @@ final class AppDependencies: ObservableObject {
     @Published var socSummary: String = ""
     @Published var latestMetrics: Metrics?
     @Published var metricsError: String = ""
-    fileprivate private(set) var metricsHistory = RingBuffer<MetricsSample>(capacity: 180)
     private var metricsTask: Task<Void, Never>?
     private var latestCollectedMetrics: Metrics?
     private var latestCollectedMetricsError: String = ""
     private var isContentVisible: Bool = false
+    private let metricsSubject = PassthroughSubject<Metrics, Never>()
+
+    var metricsPublisher: AnyPublisher<Metrics, Never> {
+        metricsSubject.eraseToAnyPublisher()
+    }
 
     private init() {
         startMetricsLoop()
@@ -76,9 +82,7 @@ final class AppDependencies: ObservableObject {
 
                     let metrics = try sampler.metrics()
                     await MainActor.run {
-                        let sampleID = AppDependencies.shared.metricsHistory.appendedCount
-                        let sample = MetricsSample(sampleID: sampleID, metrics: metrics)
-                        AppDependencies.shared.metricsHistory.append(sample)
+                        AppDependencies.shared.metricsSubject.send(metrics)
                         AppDependencies.shared.latestCollectedMetrics = metrics
                         AppDependencies.shared.latestCollectedMetricsError = ""
                         AppDependencies.shared.publishMetricsStateIfVisible()
@@ -176,8 +180,6 @@ struct ContentView: View {
     @State private var lastBatteryStatus: String = ""
 
     var body: some View {
-        let chartSamples = dependencies.metricsHistory.snapshot()
-
         VStack(spacing: 8) {
             HStack {
                 Text(dependencies.chipName ?? AppPresentation.pinnedWindowTitle)
@@ -210,8 +212,8 @@ struct ContentView: View {
                     VStack(spacing: graphPadding * 2 + 2) {
                         MetricsChartSection(
                             definition: MetricsChartDefinitions.power,
-                            samples: chartSamples,
-                            xDomain: chartXDomain,
+                            metricsPublisher: dependencies.metricsPublisher,
+                            capacity: AppPresentation.chartHistoryCapacity,
                             valueFormatter: formattedWatts
                         )
                             .frame(height: metrics.size.height * 0.35)
@@ -223,8 +225,8 @@ struct ContentView: View {
 
                         MetricsChartSection(
                             definition: MetricsChartDefinitions.frequency,
-                            samples: chartSamples,
-                            xDomain: chartXDomain,
+                            metricsPublisher: dependencies.metricsPublisher,
+                            capacity: AppPresentation.chartHistoryCapacity,
                             valueFormatter: formattedFrequencyMHz,
                             usageValueFormatter: formattedUsage
                         )
@@ -237,8 +239,8 @@ struct ContentView: View {
 
                         MetricsChartSection(
                             definition: MetricsChartDefinitions.temperature,
-                            samples: chartSamples,
-                            xDomain: chartXDomain,
+                            metricsPublisher: dependencies.metricsPublisher,
+                            capacity: AppPresentation.chartHistoryCapacity,
                             valueFormatter: formattedTemperature,
                             desiredCount: 4,
                             yStart: 30
@@ -329,12 +331,6 @@ struct ContentView: View {
             return "\(interval) ms"
         }
         return String(format: "%.2f s", Double(interval) / 1000.0)
-    }
-
-    private var chartXDomain: ClosedRange<Int> {
-        let buffer = dependencies.metricsHistory
-        let lowerBound = buffer.appendedCount - buffer.capacity
-        return lowerBound...buffer.appendedCount
     }
 }
 

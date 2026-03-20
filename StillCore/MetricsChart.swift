@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import DGCharts
 import MacmonSwift
@@ -34,42 +35,13 @@ struct MetricsSeriesDescriptor {
     var usageValue: ((Metrics) -> Double)?
 }
 
-struct MetricsSample: Identifiable {
-    let sampleID: Int
-    let metrics: Metrics
-
-    var id: Int { sampleID }
-}
-
 @MainActor
 struct MetricsChartDefinition {
     let title: String
     let unitLabel: String
     let helpMarkdown: String?
-    private let seriesBuilder: (Metrics?) -> [MetricsSeriesDescriptor]
-
-    init(title: String, unitLabel: String, helpMarkdown: String? = nil, series: [MetricsSeriesDescriptor]) {
-        self.title = title
-        self.unitLabel = unitLabel
-        self.helpMarkdown = helpMarkdown
-        self.seriesBuilder = { _ in series }
-    }
-
-    init(
-        title: String,
-        unitLabel: String,
-        helpMarkdown: String? = nil,
-        seriesBuilder: @escaping (Metrics?) -> [MetricsSeriesDescriptor]
-    ) {
-        self.title = title
-        self.unitLabel = unitLabel
-        self.helpMarkdown = helpMarkdown
-        self.seriesBuilder = seriesBuilder
-    }
-
-    func resolvedSeries(from metrics: Metrics?) -> [MetricsSeriesDescriptor] {
-        seriesBuilder(metrics)
-    }
+    let schemaBuilder: (Metrics?) -> AnyHashable
+    let seriesBuilder: (Metrics?) -> [MetricsSeriesDescriptor]
 }
 
 @MainActor
@@ -85,33 +57,36 @@ enum MetricsChartDefinitions {
 • `CHIP` is the power reported for the whole SoC, including all compute units and memory.
 • `CPU`, `GPU`, and `ANE` are individual parts of `CHIP`.
 """,
-        series: [
-            MetricsSeriesDescriptor(
-                title: "SYS",
-                color: MetricsChartPalette.board,
-                value: { Double($0.power.board) }
-            ),
-            MetricsSeriesDescriptor(
-                title: "CHIP",
-                color: MetricsChartPalette.package,
-                value: { Double($0.power.package) }
-            ),
-            MetricsSeriesDescriptor(
-                title: "CPU",
-                color: MetricsChartPalette.cpu,
-                value: { Double($0.power.cpu) }
-            ),
-            MetricsSeriesDescriptor(
-                title: "ANE",
-                color: MetricsChartPalette.ane,
-                value: { Double($0.power.ane) }
-            ),
-            MetricsSeriesDescriptor(
-                title: "GPU",
-                color: MetricsChartPalette.gpu,
-                value: { Double($0.power.gpu) }
-            ),
-        ]
+        schemaBuilder: { _ in "power" },
+        seriesBuilder: { _ in
+            [
+                MetricsSeriesDescriptor(
+                    title: "SYS",
+                    color: MetricsChartPalette.board,
+                    value: { Double($0.power.board) }
+                ),
+                MetricsSeriesDescriptor(
+                    title: "CHIP",
+                    color: MetricsChartPalette.package,
+                    value: { Double($0.power.package) }
+                ),
+                MetricsSeriesDescriptor(
+                    title: "CPU",
+                    color: MetricsChartPalette.cpu,
+                    value: { Double($0.power.cpu) }
+                ),
+                MetricsSeriesDescriptor(
+                    title: "ANE",
+                    color: MetricsChartPalette.ane,
+                    value: { Double($0.power.ane) }
+                ),
+                MetricsSeriesDescriptor(
+                    title: "GPU",
+                    color: MetricsChartPalette.gpu,
+                    value: { Double($0.power.gpu) }
+                ),
+            ]
+        }
     )
 
     static let frequency = MetricsChartDefinition(
@@ -127,6 +102,12 @@ and a semi-transparent area underneath for current usage. \
 The area shows the fraction of that frequency that is being used. \
 When usage is at 100%, the area reaches the line.
 """,
+        schemaBuilder: { metrics in
+            guard let metrics else { return AnyHashable("frequency.empty") }
+            return AnyHashable(
+                metrics.cpu_usage.map(\.name) + ["|"] + metrics.gpu_usage.map(\.name)
+            )
+        },
         seriesBuilder: { metrics in
             guard let metrics else { return [] }
             return cpuFrequencySeries(from: metrics) + gpuFrequencySeries(from: metrics)
@@ -136,18 +117,22 @@ When usage is at 100%, the area reaches the line.
     static let temperature = MetricsChartDefinition(
         title: "Temperature",
         unitLabel: "°C",
-        series: [
-            MetricsSeriesDescriptor(
-                title: "CPU",
-                color: MetricsChartPalette.cpu,
-                value: { Double($0.temperature.cpuAverage) }
-            ),
-            MetricsSeriesDescriptor(
-                title: "GPU",
-                color: MetricsChartPalette.gpu,
-                value: { Double($0.temperature.gpuAverage) }
-            ),
-        ]
+        helpMarkdown: nil,
+        schemaBuilder: { _ in "temperature" },
+        seriesBuilder: { _ in
+            [
+                MetricsSeriesDescriptor(
+                    title: "CPU",
+                    color: MetricsChartPalette.cpu,
+                    value: { Double($0.temperature.cpuAverage) }
+                ),
+                MetricsSeriesDescriptor(
+                    title: "GPU",
+                    color: MetricsChartPalette.gpu,
+                    value: { Double($0.temperature.gpuAverage) }
+                ),
+            ]
+        }
     )
 
     private static func cpuFrequencySeries(from metrics: Metrics) -> [MetricsSeriesDescriptor] {
@@ -185,39 +170,62 @@ When usage is at 100%, the area reaches the line.
     }
 }
 
-private struct MetricsChartRenderSeries {
-    let descriptor: MetricsSeriesDescriptor
-    let lineEntries: [ChartDataEntry]
-    let fillEntries: [ChartDataEntry]?
+
+private struct PreparedMetricsSample {
+    let sampleID: Int
+    let schemaVersion: Int
+    let lineValues: [Double]
+    let fillValues: [Double?]
 }
 
-private struct MetricsChartRenderModel {
-    let series: [MetricsChartRenderSeries]
 
-    init(samples: [MetricsSample], series descriptors: [MetricsSeriesDescriptor]) {
-        self.series = descriptors.map { descriptor in
-            let lineEntries = samples.map { sample in
-                ChartDataEntry(
-                    x: Double(sample.sampleID),
-                    y: descriptor.value(sample.metrics)
-                )
+@MainActor
+final class MetricsChartStore: ObservableObject {
+    @Published fileprivate var latestPreparedSample: PreparedMetricsSample?
+    @Published private(set) var latestMetrics: Metrics?
+    @Published private(set) var visibleSeries: [MetricsSeriesDescriptor] = []
+
+    private let definition: MetricsChartDefinition
+    private var schema: AnyHashable?
+    private var schemaVersion = 0
+    private var appendedCount = 0
+    private var metricsSubscription: AnyCancellable?
+
+    init(
+        definition: MetricsChartDefinition,
+        metricsPublisher: AnyPublisher<Metrics, Never>
+    ) {
+        self.definition = definition
+        self.metricsSubscription = metricsPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] metrics in
+                self?.append(metrics)
             }
+    }
 
-            let fillEntries = descriptor.usageValue.map { usageValue in
-                samples.map { sample in
-                    ChartDataEntry(
-                        x: Double(sample.sampleID),
-                        y: usageValue(sample.metrics) * descriptor.value(sample.metrics)
-                    )
-                }
-            }
-
-            return MetricsChartRenderSeries(
-                descriptor: descriptor,
-                lineEntries: lineEntries,
-                fillEntries: fillEntries
-            )
+    private func append(_ metrics: Metrics) {
+        let newSchema = definition.schemaBuilder(metrics)
+        if schema != newSchema {
+            visibleSeries = definition.seriesBuilder(metrics)
+            schema = newSchema
+            schemaVersion += 1
         }
+
+        let preparedSample = PreparedMetricsSample(
+            sampleID: appendedCount,
+            schemaVersion: schemaVersion,
+            lineValues: visibleSeries.map { descriptor in
+                descriptor.value(metrics)
+            },
+            fillValues: visibleSeries.map { descriptor in
+                guard let usageValue = descriptor.usageValue else { return nil }
+                return usageValue(metrics) * descriptor.value(metrics)
+            }
+        )
+
+        appendedCount += 1
+        latestMetrics = metrics
+        latestPreparedSample = preparedSample
     }
 }
 
@@ -239,6 +247,10 @@ final class UpperBoundStabilizer {
         self.shrinkThreshold = shrinkThreshold
         self.steps = steps
         self.spaceTop = spaceTop
+    }
+
+    func reset() {
+        current = -.infinity
     }
 
     func update(height: Double) -> Double {
@@ -267,16 +279,126 @@ final class UpperBoundStabilizer {
 
 
 final class MetricsLineChartView: LineChartView {
+    private var lastAppliedSampleID: Int?
+    private var lastAppliedSchemaVersion: Int?
+    private var lineDataSets: [LineChartDataSet] = []
+    private var fillDataSets: [LineChartDataSet?] = []
+
     let yMaxStabilizer = UpperBoundStabilizer(
         shrinkThreshold: 0.6,
         steps: [1, 1.5, 2.5, 4, 6, 10],
         spaceTop: 0.1
     )
+
+    var rightBoundary: Int {
+        (lastAppliedSampleID ?? -1) + 1
+    }
+
+    @discardableResult
+    fileprivate func append(
+        sample: PreparedMetricsSample,
+        series: [MetricsSeriesDescriptor],
+        capacity: Int,
+        lineWidth: Double
+    ) -> Bool {
+        let schemaChanged = lastAppliedSchemaVersion != sample.schemaVersion || data == nil
+        if schemaChanged {
+            rebuildEmptyData(series: series, lineWidth: lineWidth)
+            lastAppliedSchemaVersion = sample.schemaVersion
+            lastAppliedSampleID = nil
+            yMaxStabilizer.reset()
+        }
+
+        guard lastAppliedSampleID != sample.sampleID else {
+            return schemaChanged
+        }
+
+        appendEntries(from: sample, series: series)
+        trimToCapacity(capacity)
+
+        lastAppliedSampleID = sample.sampleID
+        data?.notifyDataChanged()
+        notifyDataSetChanged()
+        return schemaChanged
+    }
+
+    private func rebuildEmptyData(
+        series: [MetricsSeriesDescriptor],
+        lineWidth: Double
+    ) {
+        lineDataSets = series.map { descriptor in
+            let dataSet = LineChartDataSet(entries: [], label: descriptor.title)
+            dataSet.mode = .linear
+            dataSet.drawValuesEnabled = false
+            dataSet.drawCirclesEnabled = false
+            dataSet.drawFilledEnabled = false
+            dataSet.lineWidth = lineWidth
+            dataSet.setColor(NSColor(descriptor.color))
+            dataSet.highlightEnabled = false
+            return dataSet
+        }
+
+        fillDataSets = series.map { descriptor in
+            guard descriptor.usageValue != nil else { return nil }
+
+            let dataSet = LineChartDataSet(entries: [], label: descriptor.title)
+            dataSet.mode = .linear
+            dataSet.drawValuesEnabled = false
+            dataSet.drawCirclesEnabled = false
+            dataSet.lineWidth = 0
+            dataSet.drawFilledEnabled = true
+            dataSet.fillColor = NSColor(descriptor.color)
+            dataSet.fillAlpha = 0.3
+            dataSet.highlightEnabled = false
+            return dataSet
+        }
+
+        data = LineChartData(dataSets: fillDataSets.compactMap { $0 } + lineDataSets.reversed())
+        notifyDataSetChanged()
+    }
+
+    private func appendEntries(
+        from sample: PreparedMetricsSample,
+        series: [MetricsSeriesDescriptor]
+    ) {
+        for (index, _) in series.enumerated() {
+            lineDataSets[index].append(
+                ChartDataEntry(x: Double(sample.sampleID), y: sample.lineValues[index])
+            )
+
+            guard let fillDataSet = fillDataSets[index],
+                  let value = sample.fillValues[index] else {
+                continue
+            }
+
+            fillDataSet.append(
+                ChartDataEntry(x: Double(sample.sampleID), y: value)
+            )
+        }
+    }
+
+    private func trimToCapacity(_ capacity: Int) {
+        guard capacity > 0 else { return }
+
+        let trimThreshold = capacity * 2
+
+        lineDataSets.forEach { dataSet in
+            guard dataSet.count > trimThreshold else { return }
+            dataSet.removeFirst(dataSet.count - capacity)
+        }
+
+        fillDataSets.forEach { dataSet in
+            guard let dataSet else { return }
+            guard dataSet.count > trimThreshold else { return }
+            dataSet.removeFirst(dataSet.count - capacity)
+        }
+    }
 }
 
 private struct MetricsDGChartView: NSViewRepresentable {
-    let renderModel: MetricsChartRenderModel
-    let xDomain: ClosedRange<Int>
+    let sample: PreparedMetricsSample
+    let series: [MetricsSeriesDescriptor]
+    let capacity: Int
     let yStart: Double
     let desiredCount: Int
     let lineWidth: Double
@@ -303,15 +425,24 @@ private struct MetricsDGChartView: NSViewRepresentable {
     }
 
     func updateNSView(_ chartView: MetricsLineChartView, context: Context) {
+        let needsLegendUpdate = chartView.append(
+            sample: sample,
+            series: series,
+            capacity: capacity,
+            lineWidth: lineWidth
+        )
+
+        if needsLegendUpdate {
+            configureLegend(chartView)
+        }
+
         configureAxes(chartView)
-        configureLegend(chartView)
-        chartView.data = makeChartData()
     }
 
     private func configureAxes(_ chartView: MetricsLineChartView) {
         let xAxis = chartView.xAxis
-        xAxis.axisMinimum = Double(xDomain.lowerBound)
-        xAxis.axisMaximum = Double(xDomain.upperBound)
+        xAxis.axisMinimum = Double(chartView.rightBoundary - capacity)
+        xAxis.axisMaximum = Double(chartView.rightBoundary)
 
         let leftAxis = chartView.leftAxis
         leftAxis.enabled = true
@@ -334,45 +465,6 @@ private struct MetricsDGChartView: NSViewRepresentable {
         return chartView.yMaxStabilizer.update(height: rawYMax - yStart) + yStart
     }
 
-    private func makeChartData() -> LineChartData {
-        let fillDataSets = renderModel.series.compactMap(makeFillDataSet(for:))
-        let lineDataSets = renderModel.series.reversed().map(makeLineDataSet(for:))
-        return LineChartData(dataSets: fillDataSets + lineDataSets)
-    }
-
-    private func makeLineDataSet(for series: MetricsChartRenderSeries) -> LineChartDataSet {
-        let dataSet = LineChartDataSet(
-            entries: series.lineEntries,
-            label: series.descriptor.title
-        )
-        dataSet.mode = .linear
-        dataSet.drawValuesEnabled = false
-        dataSet.drawCirclesEnabled = false
-        dataSet.drawFilledEnabled = false
-        dataSet.lineWidth = lineWidth
-        dataSet.setColor(NSColor(series.descriptor.color))
-        dataSet.highlightEnabled = false
-        return dataSet
-    }
-
-    private func makeFillDataSet(for series: MetricsChartRenderSeries) -> LineChartDataSet? {
-        guard let fillEntries = series.fillEntries else { return nil }
-
-        let dataSet = LineChartDataSet(
-            entries: fillEntries,
-            label: series.descriptor.title
-        )
-        dataSet.mode = .linear
-        dataSet.drawValuesEnabled = false
-        dataSet.drawCirclesEnabled = false
-        dataSet.lineWidth = 0
-        dataSet.drawFilledEnabled = true
-        dataSet.fillColor = NSColor(series.descriptor.color)
-        dataSet.fillAlpha = 0.3
-        dataSet.highlightEnabled = false
-        return dataSet
-    }
-
     private func configureLegend(_ chartView: LineChartView) {
         let legend = chartView.legend
         legend.enabled = true
@@ -387,9 +479,9 @@ private struct MetricsDGChartView: NSViewRepresentable {
         legend.yOffset = -1
         legend.font = .systemFont(ofSize: 12)
         legend.textColor = NSColor(Color.secondary)
-        legend.setCustom(entries: renderModel.series.map { series in
-            let entry = LegendEntry(label: series.descriptor.title)
-            entry.formColor = NSColor(series.descriptor.color)
+        legend.setCustom(entries: series.map { descriptor in
+            let entry = LegendEntry(label: descriptor.title)
+            entry.formColor = NSColor(descriptor.color)
             return entry
         })
     }
@@ -397,27 +489,52 @@ private struct MetricsDGChartView: NSViewRepresentable {
 
 struct MetricsChartSection: View {
     let definition: MetricsChartDefinition
-    let samples: [MetricsSample]
-    let xDomain: ClosedRange<Int>
+    let capacity: Int
     let valueFormatter: (Double) -> String
     var usageValueFormatter: ((Double) -> String)? = nil
     var desiredCount = 6
     var lineWidth = 1.0
     var yStart = 0.0
+    @StateObject private var store: MetricsChartStore
     @State private var isHelpPresented = false
+
+    init(
+        definition: MetricsChartDefinition,
+        metricsPublisher: AnyPublisher<Metrics, Never>,
+        capacity: Int,
+        valueFormatter: @escaping (Double) -> String,
+        usageValueFormatter: ((Double) -> String)? = nil,
+        desiredCount: Int = 6,
+        lineWidth: Double = 1.0,
+        yStart: Double = 0.0
+    ) {
+        self.definition = definition
+        self.capacity = capacity
+        self.valueFormatter = valueFormatter
+        self.usageValueFormatter = usageValueFormatter
+        self.desiredCount = desiredCount
+        self.lineWidth = lineWidth
+        self.yStart = yStart
+        _store = StateObject(
+            wrappedValue: MetricsChartStore(
+                definition: definition,
+                metricsPublisher: metricsPublisher
+            )
+        )
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            if let lastMetrics = samples.last?.metrics {
-                let series = definition.resolvedSeries(from: lastMetrics)
+            if let sample = store.latestPreparedSample, let lastMetrics = store.latestMetrics {
                 MetricsDGChartView(
-                    renderModel: MetricsChartRenderModel(samples: samples, series: series),
-                    xDomain: xDomain,
+                    sample: sample,
+                    series: store.visibleSeries,
+                    capacity: capacity,
                     yStart: yStart,
                     desiredCount: desiredCount,
                     lineWidth: lineWidth
                 )
-                latestValuesView(series: series, metrics: lastMetrics)
+                latestValuesView(series: store.visibleSeries, metrics: lastMetrics)
             } else {
                 VStack(alignment: .leading) {
                     Spacer().frame(height: 24)
@@ -436,7 +553,7 @@ struct MetricsChartSection: View {
     private func latestValuesView(series: [MetricsSeriesDescriptor], metrics: Metrics) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Spacer()
-            ForEach(series, id: \.title) { series in
+            ForEach(Array(series.enumerated()), id: \.offset) { _, series in
                 Text(valueFormatter(series.value(metrics)))
                     .font(.system(.footnote, design: .monospaced))
                     .fontWeight(.bold)
