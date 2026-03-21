@@ -35,10 +35,8 @@ final class AppDependencies: ObservableObject {
 
     @Published var chipName: String?
     @Published var socSummary: String = ""
-    @Published var latestMetrics: Metrics?
     @Published var metricsError: String = ""
     private var metricsTask: Task<Void, Never>?
-    private var isContentVisible: Bool = false
     private let metricsSubject = PassthroughSubject<Metrics, Never>()
 
     var metricsPublisher: AnyPublisher<Metrics, Never> {
@@ -81,7 +79,9 @@ final class AppDependencies: ObservableObject {
                     let metrics = try sampler.metrics()
                     await MainActor.run {
                         AppDependencies.shared.metricsSubject.send(metrics)
-                        AppDependencies.shared.metricsError = ""
+                        if !AppDependencies.shared.metricsError.isEmpty {
+                            AppDependencies.shared.metricsError = ""
+                        }
                     }
                 }
             } catch {
@@ -91,11 +91,6 @@ final class AppDependencies: ObservableObject {
                 }
             }
         }
-    }
-
-    func setContentVisible(_ isVisible: Bool) {
-        guard isContentVisible != isVisible else { return }
-        isContentVisible = isVisible
     }
 
     private func loadSocInfo() {
@@ -285,9 +280,6 @@ struct ContentView: View {
                     }
                 }
             }
-        }
-        .onChange(of: presentationState.isWindowVisible, initial: true) { _, isVisible in
-            dependencies.setContentVisible(isVisible)
         }
     }
 

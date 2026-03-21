@@ -31,6 +31,7 @@ func normalizedGPUClusterName(_ rawName: String) -> String {
 struct MetricsSeriesDescriptor {
     let title: String
     let color: Color
+    var lineWidth = 1.0
     let value: (Metrics) -> Double
     var usageValue: ((Metrics) -> Double)?
 }
@@ -124,11 +125,13 @@ When usage is at 100%, the area reaches the line.
                 MetricsSeriesDescriptor(
                     title: "CPU",
                     color: MetricsChartPalette.cpu,
+                    lineWidth: 2.0,
                     value: { Double($0.temperature.cpuAverage) }
                 ),
                 MetricsSeriesDescriptor(
                     title: "GPU",
                     color: MetricsChartPalette.gpu,
+                    lineWidth: 2.0,
                     value: { Double($0.temperature.gpuAverage) }
                 ),
             ]
@@ -178,14 +181,133 @@ private struct PreparedMetricsSample {
     let fillValues: [Double?]
 }
 
+@MainActor
+final class MetricsChartController {
+    private(set) var data: LineChartData?
+    private(set) var rightBoundary: Int = 0
+
+    private var lastAppliedSampleID: Int?
+    private var lastAppliedSchemaVersion: Int?
+    private var lineDataSets: [LineChartDataSet] = []
+    private var fillDataSets: [LineChartDataSet?] = []
+
+    struct UpdateResult {
+        let schemaChanged: Bool
+        let appended: Bool
+    }
+
+    @discardableResult
+    fileprivate func append(
+        sample: PreparedMetricsSample,
+        series: [MetricsSeriesDescriptor],
+        capacity: Int
+    ) -> UpdateResult {
+        let schemaChanged = lastAppliedSchemaVersion != sample.schemaVersion || data == nil
+        if schemaChanged {
+            rebuildEmptyData(series: series)
+            lastAppliedSchemaVersion = sample.schemaVersion
+            lastAppliedSampleID = nil
+        }
+
+        guard lastAppliedSampleID != sample.sampleID else {
+            rightBoundary = (lastAppliedSampleID ?? -1) + 1
+            return UpdateResult(schemaChanged: schemaChanged, appended: false)
+        }
+
+        appendEntries(from: sample, series: series)
+        trimToCapacity(capacity)
+
+        lastAppliedSampleID = sample.sampleID
+        rightBoundary = sample.sampleID + 1
+        return UpdateResult(schemaChanged: schemaChanged, appended: true)
+    }
+
+    var rawYMax: Double {
+        data?.getYMax(axis: .left) ?? 0
+    }
+
+    private func rebuildEmptyData(
+        series: [MetricsSeriesDescriptor]
+    ) {
+        lineDataSets = series.map { descriptor in
+            let dataSet = LineChartDataSet(entries: [], label: descriptor.title)
+            dataSet.mode = .linear
+            dataSet.drawValuesEnabled = false
+            dataSet.drawCirclesEnabled = false
+            dataSet.drawFilledEnabled = false
+            dataSet.lineWidth = descriptor.lineWidth
+            dataSet.setColor(NSColor(descriptor.color))
+            dataSet.highlightEnabled = false
+            return dataSet
+        }
+
+        fillDataSets = series.map { descriptor in
+            guard descriptor.usageValue != nil else { return nil }
+
+            let dataSet = LineChartDataSet(entries: [], label: descriptor.title)
+            dataSet.mode = .linear
+            dataSet.drawValuesEnabled = false
+            dataSet.drawCirclesEnabled = false
+            dataSet.lineWidth = 0
+            dataSet.drawFilledEnabled = true
+            dataSet.fillColor = NSColor(descriptor.color)
+            dataSet.fillAlpha = 0.3
+            dataSet.highlightEnabled = false
+            return dataSet
+        }
+
+        data = LineChartData(dataSets: fillDataSets.compactMap { $0 } + lineDataSets.reversed())
+    }
+
+    private func appendEntries(
+        from sample: PreparedMetricsSample,
+        series: [MetricsSeriesDescriptor]
+    ) {
+        for (index, _) in series.enumerated() {
+            lineDataSets[index].append(
+                ChartDataEntry(x: Double(sample.sampleID), y: sample.lineValues[index])
+            )
+
+            guard let fillDataSet = fillDataSets[index],
+                  let value = sample.fillValues[index] else {
+                continue
+            }
+
+            fillDataSet.append(
+                ChartDataEntry(x: Double(sample.sampleID), y: value)
+            )
+        }
+    }
+
+    private func trimToCapacity(_ capacity: Int) {
+        guard capacity > 0 else { return }
+
+        let trimThreshold = capacity * 2
+
+        lineDataSets.forEach { dataSet in
+            guard dataSet.count > trimThreshold else { return }
+            dataSet.removeFirst(dataSet.count - capacity)
+        }
+
+        fillDataSets.forEach { dataSet in
+            guard let dataSet else { return }
+            guard dataSet.count > trimThreshold else { return }
+            dataSet.removeFirst(dataSet.count - capacity)
+        }
+    }
+}
+
 
 @MainActor
 final class MetricsChartStore: ObservableObject {
-    @Published fileprivate var latestPreparedSample: PreparedMetricsSample?
-    @Published private(set) var latestMetrics: Metrics?
-    @Published private(set) var visibleSeries: [MetricsSeriesDescriptor] = []
+    @Published fileprivate var chartRevision = 0
+    private(set) var latestMetrics: Metrics?
+    private(set) var visibleSeries: [MetricsSeriesDescriptor] = []
+
+    let controller = MetricsChartController()
 
     private let definition: MetricsChartDefinition
+    private let capacity: Int
     private var schema: AnyHashable?
     private var schemaVersion = 0
     private var appendedCount = 0
@@ -193,9 +315,11 @@ final class MetricsChartStore: ObservableObject {
 
     init(
         definition: MetricsChartDefinition,
-        metricsPublisher: AnyPublisher<Metrics, Never>
+        metricsPublisher: AnyPublisher<Metrics, Never>,
+        capacity: Int
     ) {
         self.definition = definition
+        self.capacity = capacity
         self.metricsSubscription = metricsPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] metrics in
@@ -224,8 +348,13 @@ final class MetricsChartStore: ObservableObject {
         )
 
         appendedCount += 1
+        controller.append(
+            sample: preparedSample,
+            series: visibleSeries,
+            capacity: capacity
+        )
         latestMetrics = metrics
-        latestPreparedSample = preparedSample
+        chartRevision += 1
     }
 }
 
@@ -279,129 +408,25 @@ final class UpperBoundStabilizer {
 
 
 final class MetricsLineChartView: LineChartView {
-    private var lastAppliedSampleID: Int?
-    private var lastAppliedSchemaVersion: Int?
-    private var lineDataSets: [LineChartDataSet] = []
-    private var fillDataSets: [LineChartDataSet?] = []
-
     let yMaxStabilizer = UpperBoundStabilizer(
         shrinkThreshold: 0.6,
         steps: [1, 1.5, 2.5, 4, 6, 10],
         spaceTop: 0.1
     )
 
-    var rightBoundary: Int {
-        (lastAppliedSampleID ?? -1) + 1
-    }
-
-    @discardableResult
-    fileprivate func append(
-        sample: PreparedMetricsSample,
-        series: [MetricsSeriesDescriptor],
-        capacity: Int,
-        lineWidth: Double
-    ) -> Bool {
-        let schemaChanged = lastAppliedSchemaVersion != sample.schemaVersion || data == nil
-        if schemaChanged {
-            rebuildEmptyData(series: series, lineWidth: lineWidth)
-            lastAppliedSchemaVersion = sample.schemaVersion
-            lastAppliedSampleID = nil
-            yMaxStabilizer.reset()
-        }
-
-        guard lastAppliedSampleID != sample.sampleID else {
-            return schemaChanged
-        }
-
-        appendEntries(from: sample, series: series)
-        trimToCapacity(capacity)
-
-        lastAppliedSampleID = sample.sampleID
+    func refreshUI() {
         data?.notifyDataChanged()
         notifyDataSetChanged()
-        return schemaChanged
-    }
-
-    private func rebuildEmptyData(
-        series: [MetricsSeriesDescriptor],
-        lineWidth: Double
-    ) {
-        lineDataSets = series.map { descriptor in
-            let dataSet = LineChartDataSet(entries: [], label: descriptor.title)
-            dataSet.mode = .linear
-            dataSet.drawValuesEnabled = false
-            dataSet.drawCirclesEnabled = false
-            dataSet.drawFilledEnabled = false
-            dataSet.lineWidth = lineWidth
-            dataSet.setColor(NSColor(descriptor.color))
-            dataSet.highlightEnabled = false
-            return dataSet
-        }
-
-        fillDataSets = series.map { descriptor in
-            guard descriptor.usageValue != nil else { return nil }
-
-            let dataSet = LineChartDataSet(entries: [], label: descriptor.title)
-            dataSet.mode = .linear
-            dataSet.drawValuesEnabled = false
-            dataSet.drawCirclesEnabled = false
-            dataSet.lineWidth = 0
-            dataSet.drawFilledEnabled = true
-            dataSet.fillColor = NSColor(descriptor.color)
-            dataSet.fillAlpha = 0.3
-            dataSet.highlightEnabled = false
-            return dataSet
-        }
-
-        data = LineChartData(dataSets: fillDataSets.compactMap { $0 } + lineDataSets.reversed())
-        notifyDataSetChanged()
-    }
-
-    private func appendEntries(
-        from sample: PreparedMetricsSample,
-        series: [MetricsSeriesDescriptor]
-    ) {
-        for (index, _) in series.enumerated() {
-            lineDataSets[index].append(
-                ChartDataEntry(x: Double(sample.sampleID), y: sample.lineValues[index])
-            )
-
-            guard let fillDataSet = fillDataSets[index],
-                  let value = sample.fillValues[index] else {
-                continue
-            }
-
-            fillDataSet.append(
-                ChartDataEntry(x: Double(sample.sampleID), y: value)
-            )
-        }
-    }
-
-    private func trimToCapacity(_ capacity: Int) {
-        guard capacity > 0 else { return }
-
-        let trimThreshold = capacity * 2
-
-        lineDataSets.forEach { dataSet in
-            guard dataSet.count > trimThreshold else { return }
-            dataSet.removeFirst(dataSet.count - capacity)
-        }
-
-        fillDataSets.forEach { dataSet in
-            guard let dataSet else { return }
-            guard dataSet.count > trimThreshold else { return }
-            dataSet.removeFirst(dataSet.count - capacity)
-        }
     }
 }
 
 private struct MetricsDGChartView: NSViewRepresentable {
-    let sample: PreparedMetricsSample
+    let controller: MetricsChartController
+    let revision: Int
     let series: [MetricsSeriesDescriptor]
     let capacity: Int
     let yStart: Double
     let desiredCount: Int
-    let lineWidth: Double
 
     func makeNSView(context: Context) -> MetricsLineChartView {
         let chartView = MetricsLineChartView()
@@ -425,24 +450,20 @@ private struct MetricsDGChartView: NSViewRepresentable {
     }
 
     func updateNSView(_ chartView: MetricsLineChartView, context: Context) {
-        let needsLegendUpdate = chartView.append(
-            sample: sample,
-            series: series,
-            capacity: capacity,
-            lineWidth: lineWidth
-        )
-
-        if needsLegendUpdate {
-            configureLegend(chartView)
+        if chartView.data !== controller.data {
+            chartView.data = controller.data
+            chartView.yMaxStabilizer.reset()
         }
 
+        configureLegend(chartView)
         configureAxes(chartView)
+        chartView.refreshUI()
     }
 
     private func configureAxes(_ chartView: MetricsLineChartView) {
         let xAxis = chartView.xAxis
-        xAxis.axisMinimum = Double(chartView.rightBoundary - capacity)
-        xAxis.axisMaximum = Double(chartView.rightBoundary)
+        xAxis.axisMinimum = Double(controller.rightBoundary - capacity)
+        xAxis.axisMaximum = Double(controller.rightBoundary)
 
         let leftAxis = chartView.leftAxis
         leftAxis.enabled = true
@@ -453,7 +474,7 @@ private struct MetricsDGChartView: NSViewRepresentable {
         leftAxis.setLabelCount(desiredCount, force: false)
         leftAxis.drawAxisLineEnabled = false
         leftAxis.drawGridLinesEnabled = true
-        leftAxis.gridLineWidth = 0.5
+        leftAxis.gridLineWidth = 0.2
         leftAxis.gridLineDashLengths = [3, 2]
         leftAxis.drawZeroLineEnabled = true
         leftAxis.zeroLineWidth = 1
@@ -461,8 +482,7 @@ private struct MetricsDGChartView: NSViewRepresentable {
     }
 
     private func getYMax(_ chartView: MetricsLineChartView) -> Double {
-        let rawYMax = chartView.data?.getYMax(axis: .left) ?? 0
-        return chartView.yMaxStabilizer.update(height: rawYMax - yStart) + yStart
+        chartView.yMaxStabilizer.update(height: controller.rawYMax - yStart) + yStart
     }
 
     private func configureLegend(_ chartView: LineChartView) {
@@ -493,7 +513,6 @@ struct MetricsChartSection: View {
     let valueFormatter: (Double) -> String
     var usageValueFormatter: ((Double) -> String)? = nil
     var desiredCount = 6
-    var lineWidth = 1.0
     var yStart = 0.0
     @StateObject private var store: MetricsChartStore
     @State private var isHelpPresented = false
@@ -505,7 +524,6 @@ struct MetricsChartSection: View {
         valueFormatter: @escaping (Double) -> String,
         usageValueFormatter: ((Double) -> String)? = nil,
         desiredCount: Int = 6,
-        lineWidth: Double = 1.0,
         yStart: Double = 0.0
     ) {
         self.definition = definition
@@ -513,26 +531,26 @@ struct MetricsChartSection: View {
         self.valueFormatter = valueFormatter
         self.usageValueFormatter = usageValueFormatter
         self.desiredCount = desiredCount
-        self.lineWidth = lineWidth
         self.yStart = yStart
         _store = StateObject(
             wrappedValue: MetricsChartStore(
                 definition: definition,
-                metricsPublisher: metricsPublisher
+                metricsPublisher: metricsPublisher,
+                capacity: capacity
             )
         )
     }
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            if let sample = store.latestPreparedSample, let lastMetrics = store.latestMetrics {
+            if let lastMetrics = store.latestMetrics {
                 MetricsDGChartView(
-                    sample: sample,
+                    controller: store.controller,
+                    revision: store.chartRevision,
                     series: store.visibleSeries,
                     capacity: capacity,
                     yStart: yStart,
-                    desiredCount: desiredCount,
-                    lineWidth: lineWidth
+                    desiredCount: desiredCount
                 )
                 latestValuesView(series: store.visibleSeries, metrics: lastMetrics)
             } else {
