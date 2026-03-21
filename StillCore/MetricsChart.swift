@@ -10,6 +10,20 @@ struct MetricsSeriesDescriptor {
     var lineWidth = 1.0
     let value: (Metrics) -> Double
     var usageValue: ((Metrics) -> Double)?
+    let valueFormatter: (Double) -> String
+    var usageValueFormatter: ((Double) -> String)?
+
+    func formattedValue(for metrics: Metrics) -> String {
+        valueFormatter(value(metrics))
+    }
+
+    func formattedUsageValue(for metrics: Metrics) -> String? {
+        guard let usageValue = usageValue,
+              let usageValueFormatter = usageValueFormatter else {
+            return nil
+        }
+        return usageValueFormatter(usageValue(metrics))
+    }
 }
 
 @MainActor
@@ -378,9 +392,7 @@ private struct MetricsDGChartView: NSViewRepresentable {
     let metrics: Metrics
     let capacity: Int
     let yStart: Double
-    let desiredCount: Int
-    let valueFormatter: (Double) -> String
-    let usageValueFormatter: ((Double) -> String)?
+    let yAxisLabelCount: Int
 
     func makeNSView(context: Context) -> MetricsLineChartView {
         let chartView = MetricsLineChartView()
@@ -423,15 +435,9 @@ private struct MetricsDGChartView: NSViewRepresentable {
     private func makeCurrentValueRows() -> [MetricsCurrentValuesRenderer.Row] {
         series.map { descriptor in
             MetricsCurrentValuesRenderer.Row(
-                valueText: valueFormatter(descriptor.value(metrics)),
+                valueText: descriptor.formattedValue(for: metrics),
                 valueColor: NSColor(descriptor.color),
-                usageText: {
-                    guard let usageValueFormatter,
-                          let usageValue = descriptor.usageValue else {
-                        return nil
-                    }
-                    return usageValueFormatter(usageValue(metrics))
-                }()
+                usageText: descriptor.formattedUsageValue(for: metrics)
             )
         }
     }
@@ -448,7 +454,7 @@ private struct MetricsDGChartView: NSViewRepresentable {
         leftAxis.axisMaximum = getYMax(chartView)
 
         leftAxis.drawLabelsEnabled = true
-        leftAxis.setLabelCount(desiredCount, force: false)
+        leftAxis.setLabelCount(yAxisLabelCount, force: false)
         leftAxis.drawAxisLineEnabled = false
         leftAxis.drawGridLinesEnabled = true
         leftAxis.gridLineWidth = 0.2
@@ -487,10 +493,8 @@ private struct MetricsDGChartView: NSViewRepresentable {
 struct MetricsChartSection: View {
     let definition: MetricsChartDefinition
     let capacity: Int
-    let isVisible: Bool
-    let valueFormatter: (Double) -> String
-    let usageValueFormatter: ((Double) -> String)?
-    let desiredCount: Int
+    let showUpdates: Bool
+    let yAxisLabelCount: Int
     let yStart: Double
     @StateObject private var store: MetricsChartStore
     @State private var isHelpPresented = false
@@ -499,18 +503,14 @@ struct MetricsChartSection: View {
         definition: MetricsChartDefinition,
         metricsPublisher: AnyPublisher<Metrics, Never>,
         capacity: Int,
-        isVisible: Bool,
-        valueFormatter: @escaping (Double) -> String,
-        usageValueFormatter: ((Double) -> String)? = nil,
-        desiredCount: Int = 5,
+        showUpdates: Bool,
+        yAxisLabelCount: Int = 5,
         yStart: Double = 0.0
     ) {
         self.definition = definition
         self.capacity = capacity
-        self.isVisible = isVisible
-        self.valueFormatter = valueFormatter
-        self.usageValueFormatter = usageValueFormatter
-        self.desiredCount = desiredCount
+        self.showUpdates = showUpdates
+        self.yAxisLabelCount = yAxisLabelCount
         self.yStart = yStart
         _store = StateObject(
             wrappedValue: MetricsChartStore(
@@ -531,9 +531,7 @@ struct MetricsChartSection: View {
                     metrics: lastMetrics,
                     capacity: capacity,
                     yStart: yStart,
-                    desiredCount: desiredCount,
-                    valueFormatter: valueFormatter,
-                    usageValueFormatter: usageValueFormatter
+                    yAxisLabelCount: yAxisLabelCount
                 )
             } else {
                 VStack(alignment: .leading) {
@@ -549,9 +547,9 @@ struct MetricsChartSection: View {
         .padding(.top, 2)
         .overlay(alignment: .topLeading, content: headerView)
         .onAppear {
-            store.setUIEnabled(isVisible)
+            store.setUIEnabled(showUpdates)
         }
-        .onChange(of: isVisible) { _, newValue in
+        .onChange(of: showUpdates) { _, newValue in
             store.setUIEnabled(newValue)
         }
     }

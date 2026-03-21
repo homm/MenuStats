@@ -175,7 +175,25 @@ private enum MetricsChartPalette {
 }
 
 @MainActor
-enum MetricsChartDefinitions {
+private enum MetricsChartDefinitions {
+    private enum Formatters {
+        static func watts(_ value: Double) -> String {
+            String(format: "%6.2f", locale: FormatLocale.posix, value)
+        }
+
+        static func temperature(_ value: Double) -> String {
+            String(format: "%6.1f ", locale: FormatLocale.posix, value)
+        }
+
+        static func frequencyGHz(_ value: Double) -> String {
+            String(format: "%6.2f", locale: FormatLocale.posix, value)
+        }
+
+        static func usage(_ value: Double) -> String {
+            String(format: "%5.1f%%", locale: FormatLocale.posix, value * 100.0)
+        }
+    }
+
     static let power = MetricsChartDefinition(
         title: "Power",
         unitLabel: "WATT",
@@ -193,27 +211,57 @@ enum MetricsChartDefinitions {
                 MetricsSeriesDescriptor(
                     title: "SYS",
                     color: MetricsChartPalette.board,
-                    value: { Double($0.power.board) }
+                    value: { Double($0.power.board) },
+                    valueFormatter: Formatters.watts
                 ),
                 MetricsSeriesDescriptor(
                     title: "CHIP",
                     color: MetricsChartPalette.package,
-                    value: { Double($0.power.package) }
+                    value: { Double($0.power.package) },
+                    valueFormatter: Formatters.watts
                 ),
                 MetricsSeriesDescriptor(
                     title: "CPU",
                     color: MetricsChartPalette.cpu,
-                    value: { Double($0.power.cpu) }
+                    value: { Double($0.power.cpu) },
+                    valueFormatter: Formatters.watts
                 ),
                 MetricsSeriesDescriptor(
                     title: "ANE",
                     color: MetricsChartPalette.ane,
-                    value: { Double($0.power.ane) }
+                    value: { Double($0.power.ane) },
+                    valueFormatter: Formatters.watts
                 ),
                 MetricsSeriesDescriptor(
                     title: "GPU",
                     color: MetricsChartPalette.gpu,
-                    value: { Double($0.power.gpu) }
+                    value: { Double($0.power.gpu) },
+                    valueFormatter: Formatters.watts
+                ),
+            ]
+        }
+    )
+
+    static let temperature = MetricsChartDefinition(
+        title: "Temperature",
+        unitLabel: "°C",
+        helpMarkdown: nil,
+        schemaBuilder: { _ in "temperature" },
+        seriesBuilder: { _ in
+            [
+                MetricsSeriesDescriptor(
+                    title: "CPU",
+                    color: MetricsChartPalette.cpu,
+                    lineWidth: 2.0,
+                    value: { Double($0.temperature.cpuAverage) },
+                    valueFormatter: Formatters.temperature
+                ),
+                MetricsSeriesDescriptor(
+                    title: "GPU",
+                    color: MetricsChartPalette.gpu,
+                    lineWidth: 2.0,
+                    value: { Double($0.temperature.gpuAverage) },
+                    valueFormatter: Formatters.temperature
                 ),
             ]
         }
@@ -244,33 +292,10 @@ When usage is at 100%, the area reaches the line.
         }
     )
 
-    static let temperature = MetricsChartDefinition(
-        title: "Temperature",
-        unitLabel: "°C",
-        helpMarkdown: nil,
-        schemaBuilder: { _ in "temperature" },
-        seriesBuilder: { _ in
-            [
-                MetricsSeriesDescriptor(
-                    title: "CPU",
-                    color: MetricsChartPalette.cpu,
-                    lineWidth: 2.0,
-                    value: { Double($0.temperature.cpuAverage) }
-                ),
-                MetricsSeriesDescriptor(
-                    title: "GPU",
-                    color: MetricsChartPalette.gpu,
-                    lineWidth: 2.0,
-                    value: { Double($0.temperature.gpuAverage) }
-                ),
-            ]
-        }
-    )
-
     private static func cpuFrequencySeries(from metrics: Metrics) -> [MetricsSeriesDescriptor] {
         metrics.cpu_usage.enumerated().map { index, cluster in
             MetricsSeriesDescriptor(
-                title: cluster.name,
+                title: metrics.cpu_usage.count == 1 ? "CPU" : cluster.name,
                 color: MetricsChartPalette.cpuFrequencyPalette[
                     index % MetricsChartPalette.cpuFrequencyPalette.count
                 ],
@@ -279,7 +304,9 @@ When usage is at 100%, the area reaches the line.
                 },
                 usageValue: { metrics in
                     Double(metrics.cpu_usage[index].usage)
-                }
+                },
+                valueFormatter: Formatters.frequencyGHz,
+                usageValueFormatter: Formatters.usage
             )
         }
     }
@@ -287,7 +314,7 @@ When usage is at 100%, the area reaches the line.
     private static func gpuFrequencySeries(from metrics: Metrics) -> [MetricsSeriesDescriptor] {
         metrics.gpu_usage.enumerated().map { index, cluster in
             MetricsSeriesDescriptor(
-                title: cluster.name,
+                title: metrics.gpu_usage.count == 1 ? "GPU" : cluster.name,
                 color: MetricsChartPalette.gpuFrequencyPalette[
                     index % MetricsChartPalette.gpuFrequencyPalette.count
                 ],
@@ -296,7 +323,9 @@ When usage is at 100%, the area reaches the line.
                 },
                 usageValue: { metrics in
                     Double(metrics.gpu_usage[index].usage)
-                }
+                },
+                valueFormatter: Formatters.frequencyGHz,
+                usageValueFormatter: Formatters.usage
             )
         }
     }
@@ -346,8 +375,7 @@ struct ContentView: View {
                         definition: MetricsChartDefinitions.power,
                         metricsPublisher: dependencies.metricsPublisher,
                         capacity: AppPresentation.chartHistoryCapacity,
-                        isVisible: presentationState.isWindowVisible,
-                        valueFormatter: formattedWatts
+                        showUpdates: presentationState.isWindowVisible
                     )
                         .frame(height: metrics.size.height * 0.35)
                         .background(backgroundColor)
@@ -356,9 +384,7 @@ struct ContentView: View {
                         definition: MetricsChartDefinitions.frequency,
                         metricsPublisher: dependencies.metricsPublisher,
                         capacity: AppPresentation.chartHistoryCapacity,
-                        isVisible: presentationState.isWindowVisible,
-                        valueFormatter: formattedFrequencyMHz,
-                        usageValueFormatter: formattedUsage
+                        showUpdates: presentationState.isWindowVisible
                     )
                         .frame(height: metrics.size.height * 0.35)
                         .background(backgroundColor)
@@ -367,9 +393,8 @@ struct ContentView: View {
                         definition: MetricsChartDefinitions.temperature,
                         metricsPublisher: dependencies.metricsPublisher,
                         capacity: AppPresentation.chartHistoryCapacity,
-                        isVisible: presentationState.isWindowVisible,
-                        valueFormatter: formattedTemperature,
-                        desiredCount: 4,
+                        showUpdates: presentationState.isWindowVisible,
+                        yAxisLabelCount: 4,
                         yStart: 30
                     )
                         .background(backgroundColor)
@@ -427,22 +452,6 @@ struct ContentView: View {
                 }
             }
         }
-    }
-
-    private func formattedWatts(_ value: Double) -> String {
-        String(format: "%6.2f", locale: FormatLocale.posix, value)
-    }
-
-    private func formattedTemperature(_ value: Double) -> String {
-        String(format: "%6.1f ", locale: FormatLocale.posix, value)
-    }
-
-    private func formattedFrequencyMHz(_ value: Double) -> String {
-        String(format: "%6.2f", locale: FormatLocale.posix, value)
-    }
-
-    private func formattedUsage(_ value: Double) -> String {
-        String(format: "%5.1f%%", locale: FormatLocale.posix, value * 100.0)
     }
 
     private var intervalLabel: String {
