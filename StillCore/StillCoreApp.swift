@@ -154,6 +154,154 @@ final class AppDependencies: ObservableObject {
     private static let largeIntervalThresholdMs = 5_000
 }
 
+private enum MetricsChartPalette {
+    static let board = Color(red: 0.12, green: 0.8, blue: 0.2)
+    static let package = Color(red: 0.13, green: 0.48, blue: 0.97)
+    static let cpu = Color(red: 0.32, green: 0.74, blue: 0.98)
+    static let gpu = Color(red: 1, green: 0.22, blue: 0.02)
+    static let ane = Color(red: 0.98, green: 0.58, blue: 0.02)
+
+    static let cpuFrequencyPalette: [Color] = [
+        board, package, cpu,
+        Color(red: 0.18, green: 0.60, blue: 0.84),
+        Color(red: 0.10, green: 0.42, blue: 0.70),
+    ]
+
+    static let gpuFrequencyPalette: [Color] = [
+        gpu, ane,
+        Color(red: 0.92, green: 0.36, blue: 0.18),
+        Color(red: 0.86, green: 0.14, blue: 0.34),
+    ]
+}
+
+@MainActor
+enum MetricsChartDefinitions {
+    static let power = MetricsChartDefinition(
+        title: "Power",
+        unitLabel: "WATT",
+        helpMarkdown:
+"""
+**Power draw by components**
+
+• `SYS` is the total system power draw.
+• `CHIP` is the power reported for the whole SoC, including all compute units and memory.
+• `CPU`, `GPU`, and `ANE` are individual parts of `CHIP`.
+""",
+        schemaBuilder: { _ in "power" },
+        seriesBuilder: { _ in
+            [
+                MetricsSeriesDescriptor(
+                    title: "SYS",
+                    color: MetricsChartPalette.board,
+                    value: { Double($0.power.board) }
+                ),
+                MetricsSeriesDescriptor(
+                    title: "CHIP",
+                    color: MetricsChartPalette.package,
+                    value: { Double($0.power.package) }
+                ),
+                MetricsSeriesDescriptor(
+                    title: "CPU",
+                    color: MetricsChartPalette.cpu,
+                    value: { Double($0.power.cpu) }
+                ),
+                MetricsSeriesDescriptor(
+                    title: "ANE",
+                    color: MetricsChartPalette.ane,
+                    value: { Double($0.power.ane) }
+                ),
+                MetricsSeriesDescriptor(
+                    title: "GPU",
+                    color: MetricsChartPalette.gpu,
+                    value: { Double($0.power.gpu) }
+                ),
+            ]
+        }
+    )
+
+    static let frequency = MetricsChartDefinition(
+        title: "Frequency, usage",
+        unitLabel: "GHz",
+        helpMarkdown:
+"""
+Current frequency and usage of all CPU and GPU clusters.
+
+**How to read this mess**
+Each cluster is shown with a solid line for frequency \
+and a semi-transparent area underneath for current usage. \
+The area shows the fraction of that frequency that is being used. \
+When usage is at 100%, the area reaches the line.
+""",
+        schemaBuilder: { metrics in
+            guard let metrics else { return AnyHashable("frequency.empty") }
+            return AnyHashable(
+                metrics.cpu_usage.map(\.name) + ["|"] + metrics.gpu_usage.map(\.name)
+            )
+        },
+        seriesBuilder: { metrics in
+            guard let metrics else { return [] }
+            return cpuFrequencySeries(from: metrics) + gpuFrequencySeries(from: metrics)
+        }
+    )
+
+    static let temperature = MetricsChartDefinition(
+        title: "Temperature",
+        unitLabel: "°C",
+        helpMarkdown: nil,
+        schemaBuilder: { _ in "temperature" },
+        seriesBuilder: { _ in
+            [
+                MetricsSeriesDescriptor(
+                    title: "CPU",
+                    color: MetricsChartPalette.cpu,
+                    lineWidth: 2.0,
+                    value: { Double($0.temperature.cpuAverage) }
+                ),
+                MetricsSeriesDescriptor(
+                    title: "GPU",
+                    color: MetricsChartPalette.gpu,
+                    lineWidth: 2.0,
+                    value: { Double($0.temperature.gpuAverage) }
+                ),
+            ]
+        }
+    )
+
+    private static func cpuFrequencySeries(from metrics: Metrics) -> [MetricsSeriesDescriptor] {
+        metrics.cpu_usage.enumerated().map { index, cluster in
+            MetricsSeriesDescriptor(
+                title: cluster.name,
+                color: MetricsChartPalette.cpuFrequencyPalette[
+                    index % MetricsChartPalette.cpuFrequencyPalette.count
+                ],
+                value: { metrics in
+                    Double(metrics.cpu_usage[index].frequencyMHz) / 1000
+                },
+                usageValue: { metrics in
+                    Double(metrics.cpu_usage[index].usage)
+                }
+            )
+        }
+    }
+
+    private static func gpuFrequencySeries(from metrics: Metrics) -> [MetricsSeriesDescriptor] {
+        metrics.gpu_usage.enumerated().map { index, cluster in
+            MetricsSeriesDescriptor(
+                title: cluster.name,
+                color: MetricsChartPalette.gpuFrequencyPalette[
+                    index % MetricsChartPalette.gpuFrequencyPalette.count
+                ],
+                value: { metrics in
+                    Double(metrics.gpu_usage[index].frequencyMHz) / 1000
+                },
+                usageValue: { metrics in
+                    Double(metrics.gpu_usage[index].usage)
+                }
+            )
+        }
+    }
+}
+
 // MARK: - SwiftUI content for the popover/window
 struct ContentView: View {
     @ObservedObject private var dependencies = AppDependencies.shared
@@ -187,62 +335,53 @@ struct ContentView: View {
             Divider()
                 .background(Color(nsColor: .textColor))
 
-            VStack(spacing: 8) {
-                let graphPadding: CGFloat = 8
-                GeometryReader { metrics in
-                    VStack(spacing: graphPadding * 2 + 2) {
-                        MetricsChartSection(
-                            definition: MetricsChartDefinitions.power,
-                            metricsPublisher: dependencies.metricsPublisher,
-                            capacity: AppPresentation.chartHistoryCapacity,
-                            isVisible: presentationState.isWindowVisible,
-                            valueFormatter: formattedWatts
-                        )
-                            .frame(height: metrics.size.height * 0.35)
-                            .background {
-                                Color(.textBackgroundColor)
-                                .padding(.horizontal, -12)
-                                .padding(.vertical, -graphPadding)
-                            }
+            let graphPadding: CGFloat = 8
+            let backgroundColor = Color(.textBackgroundColor)
+                .padding(.horizontal, -12)
+                .padding(.top, -graphPadding)
+                .padding(.bottom, -graphPadding + 4)
+            GeometryReader { metrics in
+                VStack(spacing: graphPadding * 2 - 2) {
+                    MetricsChartSection(
+                        definition: MetricsChartDefinitions.power,
+                        metricsPublisher: dependencies.metricsPublisher,
+                        capacity: AppPresentation.chartHistoryCapacity,
+                        isVisible: presentationState.isWindowVisible,
+                        valueFormatter: formattedWatts
+                    )
+                        .frame(height: metrics.size.height * 0.35)
+                        .background(backgroundColor)
 
-                        MetricsChartSection(
-                            definition: MetricsChartDefinitions.frequency,
-                            metricsPublisher: dependencies.metricsPublisher,
-                            capacity: AppPresentation.chartHistoryCapacity,
-                            isVisible: presentationState.isWindowVisible,
-                            valueFormatter: formattedFrequencyMHz,
-                            usageValueFormatter: formattedUsage
-                        )
-                            .frame(height: metrics.size.height * 0.35)
-                            .background {
-                                Color(.textBackgroundColor)
-                                .padding(.horizontal, -12)
-                                .padding(.vertical, -graphPadding)
-                            }
+                    MetricsChartSection(
+                        definition: MetricsChartDefinitions.frequency,
+                        metricsPublisher: dependencies.metricsPublisher,
+                        capacity: AppPresentation.chartHistoryCapacity,
+                        isVisible: presentationState.isWindowVisible,
+                        valueFormatter: formattedFrequencyMHz,
+                        usageValueFormatter: formattedUsage
+                    )
+                        .frame(height: metrics.size.height * 0.35)
+                        .background(backgroundColor)
 
-                        MetricsChartSection(
-                            definition: MetricsChartDefinitions.temperature,
-                            metricsPublisher: dependencies.metricsPublisher,
-                            capacity: AppPresentation.chartHistoryCapacity,
-                            isVisible: presentationState.isWindowVisible,
-                            valueFormatter: formattedTemperature,
-                            desiredCount: 4,
-                            yStart: 30
-                        )
-                            .background {
-                                Color(.textBackgroundColor)
-                                .padding(.horizontal, -12)
-                                .padding(.vertical, -graphPadding)
-                            }
-                    }
+                    MetricsChartSection(
+                        definition: MetricsChartDefinitions.temperature,
+                        metricsPublisher: dependencies.metricsPublisher,
+                        capacity: AppPresentation.chartHistoryCapacity,
+                        isVisible: presentationState.isWindowVisible,
+                        valueFormatter: formattedTemperature,
+                        desiredCount: 4,
+                        yStart: 30
+                    )
+                        .background(backgroundColor)
                 }
+                    .padding(.bottom, -4)
+            }
 
-                if !dependencies.metricsError.isEmpty {
-                    Text(dependencies.metricsError)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
+            if !dependencies.metricsError.isEmpty {
+                Text(dependencies.metricsError)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
             }
 
             Divider()
@@ -295,7 +434,7 @@ struct ContentView: View {
     }
 
     private func formattedTemperature(_ value: Double) -> String {
-        String(format: "%5.1f ", locale: FormatLocale.posix, value)
+        String(format: "%6.1f ", locale: FormatLocale.posix, value)
     }
 
     private func formattedFrequencyMHz(_ value: Double) -> String {
