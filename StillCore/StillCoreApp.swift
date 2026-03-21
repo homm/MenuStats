@@ -38,8 +38,6 @@ final class AppDependencies: ObservableObject {
     @Published var latestMetrics: Metrics?
     @Published var metricsError: String = ""
     private var metricsTask: Task<Void, Never>?
-    private var latestCollectedMetrics: Metrics?
-    private var latestCollectedMetricsError: String = ""
     private var isContentVisible: Bool = false
     private let metricsSubject = PassthroughSubject<Metrics, Never>()
 
@@ -83,37 +81,21 @@ final class AppDependencies: ObservableObject {
                     let metrics = try sampler.metrics()
                     await MainActor.run {
                         AppDependencies.shared.metricsSubject.send(metrics)
-                        AppDependencies.shared.latestCollectedMetrics = metrics
-                        AppDependencies.shared.latestCollectedMetricsError = ""
-                        AppDependencies.shared.publishMetricsStateIfVisible()
+                        AppDependencies.shared.metricsError = ""
                     }
                 }
             } catch {
                 await MainActor.run {
-                    AppDependencies.shared.latestCollectedMetrics = nil
-                    AppDependencies.shared.latestCollectedMetricsError = "Macmon metrics error: \(error)"
-                    AppDependencies.shared.publishMetricsStateIfVisible()
+                    AppDependencies.shared.metricsError = "Macmon metrics error: \(error)"
                     AppDependencies.shared.metricsTask = nil
                 }
             }
         }
     }
 
-
     func setContentVisible(_ isVisible: Bool) {
         guard isContentVisible != isVisible else { return }
         isContentVisible = isVisible
-
-        if isVisible {
-            latestMetrics = latestCollectedMetrics
-            metricsError = latestCollectedMetricsError
-        }
-    }
-
-    private func publishMetricsStateIfVisible() {
-        guard isContentVisible else { return }
-        latestMetrics = latestCollectedMetrics
-        metricsError = latestCollectedMetricsError
     }
 
     private func loadSocInfo() {
@@ -253,7 +235,7 @@ struct ContentView: View {
                     }
                 }
 
-                if dependencies.latestMetrics == nil && !dependencies.metricsError.isEmpty {
+                if !dependencies.metricsError.isEmpty {
                     Text(dependencies.metricsError)
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(.secondary)
