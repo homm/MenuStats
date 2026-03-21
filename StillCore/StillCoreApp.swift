@@ -211,32 +211,37 @@ private enum MetricsChartDefinitions {
                 MetricsSeriesDescriptor(
                     title: "SYS",
                     color: MetricsChartPalette.board,
-                    value: { Double($0.power.board) },
-                    valueFormatter: Formatters.watts
+                    kind: .line,
+                    chartValue: { Double($0.power.board) },
+                    detailsFormatter: Formatters.watts
                 ),
                 MetricsSeriesDescriptor(
                     title: "CHIP",
                     color: MetricsChartPalette.package,
-                    value: { Double($0.power.package) },
-                    valueFormatter: Formatters.watts
+                    kind: .line,
+                    chartValue: { Double($0.power.package) },
+                    detailsFormatter: Formatters.watts
                 ),
                 MetricsSeriesDescriptor(
                     title: "CPU",
                     color: MetricsChartPalette.cpu,
-                    value: { Double($0.power.cpu) },
-                    valueFormatter: Formatters.watts
+                    kind: .line,
+                    chartValue: { Double($0.power.cpu) },
+                    detailsFormatter: Formatters.watts
                 ),
                 MetricsSeriesDescriptor(
                     title: "ANE",
                     color: MetricsChartPalette.ane,
-                    value: { Double($0.power.ane) },
-                    valueFormatter: Formatters.watts
+                    kind: .line,
+                    chartValue: { Double($0.power.ane) },
+                    detailsFormatter: Formatters.watts
                 ),
                 MetricsSeriesDescriptor(
                     title: "GPU",
                     color: MetricsChartPalette.gpu,
-                    value: { Double($0.power.gpu) },
-                    valueFormatter: Formatters.watts
+                    kind: .line,
+                    chartValue: { Double($0.power.gpu) },
+                    detailsFormatter: Formatters.watts
                 ),
             ]
         }
@@ -252,16 +257,18 @@ private enum MetricsChartDefinitions {
                 MetricsSeriesDescriptor(
                     title: "CPU",
                     color: MetricsChartPalette.cpu,
+                    kind: .line,
                     lineWidth: 2.0,
-                    value: { Double($0.temperature.cpuAverage) },
-                    valueFormatter: Formatters.temperature
+                    chartValue: { Double($0.temperature.cpuAverage) },
+                    detailsFormatter: Formatters.temperature
                 ),
                 MetricsSeriesDescriptor(
                     title: "GPU",
                     color: MetricsChartPalette.gpu,
+                    kind: .line,
                     lineWidth: 2.0,
-                    value: { Double($0.temperature.gpuAverage) },
-                    valueFormatter: Formatters.temperature
+                    chartValue: { Double($0.temperature.gpuAverage) },
+                    detailsFormatter: Formatters.temperature
                 ),
             ]
         }
@@ -293,40 +300,76 @@ When usage is at 100%, the area reaches the line.
     )
 
     private static func cpuFrequencySeries(from metrics: Metrics) -> [MetricsSeriesDescriptor] {
-        metrics.cpu_usage.enumerated().map { index, cluster in
-            MetricsSeriesDescriptor(
-                title: metrics.cpu_usage.count == 1 ? "CPU" : cluster.name,
-                color: MetricsChartPalette.cpuFrequencyPalette[
-                    index % MetricsChartPalette.cpuFrequencyPalette.count
-                ],
-                value: { metrics in
-                    Double(metrics.cpu_usage[index].frequencyMHz) / 1000
-                },
-                usageValue: { metrics in
-                    Double(metrics.cpu_usage[index].usage)
-                },
-                valueFormatter: Formatters.frequencyGHz,
-                usageValueFormatter: Formatters.usage
-            )
+        metrics.cpu_usage.enumerated().flatMap { index, cluster in
+            let title = metrics.cpu_usage.count == 1 ? "CPU" : cluster.name
+            let color = MetricsChartPalette.cpuFrequencyPalette[
+                index % MetricsChartPalette.cpuFrequencyPalette.count
+            ]
+            let group = "cpu.\(index)"
+
+            return [
+                MetricsSeriesDescriptor(
+                    title: title,
+                    color: color,
+                    kind: .line,
+                    chartValue: { metrics in
+                        Double(metrics.cpu_usage[index].frequencyMHz) / 1000
+                    },
+                    detailsFormatter: Formatters.frequencyGHz,
+                    detailsGroup: group
+                ),
+                MetricsSeriesDescriptor(
+                    title: title,
+                    color: color.opacity(0.3),
+                    kind: .fill,
+                    chartValue: { metrics in
+                        Double(metrics.cpu_usage[index].usage)
+                            * Double(metrics.cpu_usage[index].frequencyMHz) / 1000
+                    },
+                    detailsValue: { metrics in
+                        Double(metrics.cpu_usage[index].usage)
+                    },
+                    detailsFormatter: Formatters.usage,
+                    detailsGroup: group
+                ),
+            ]
         }
     }
 
     private static func gpuFrequencySeries(from metrics: Metrics) -> [MetricsSeriesDescriptor] {
-        metrics.gpu_usage.enumerated().map { index, cluster in
-            MetricsSeriesDescriptor(
-                title: metrics.gpu_usage.count == 1 ? "GPU" : cluster.name,
-                color: MetricsChartPalette.gpuFrequencyPalette[
-                    index % MetricsChartPalette.gpuFrequencyPalette.count
-                ],
-                value: { metrics in
-                    Double(metrics.gpu_usage[index].frequencyMHz) / 1000
-                },
-                usageValue: { metrics in
-                    Double(metrics.gpu_usage[index].usage)
-                },
-                valueFormatter: Formatters.frequencyGHz,
-                usageValueFormatter: Formatters.usage
-            )
+        metrics.gpu_usage.enumerated().flatMap { index, cluster in
+            let title = metrics.gpu_usage.count == 1 ? "GPU" : cluster.name
+            let color = MetricsChartPalette.gpuFrequencyPalette[
+                index % MetricsChartPalette.gpuFrequencyPalette.count
+            ]
+            let group = "gpu.\(index)"
+
+            return [
+                MetricsSeriesDescriptor(
+                    title: title,
+                    color: color,
+                    kind: .line,
+                    chartValue: { metrics in
+                        Double(metrics.gpu_usage[index].frequencyMHz) / 1000
+                    },
+                    detailsFormatter: Formatters.frequencyGHz,
+                    detailsGroup: group
+                ),
+                MetricsSeriesDescriptor(
+                    title: title,
+                    color: color.opacity(0.3),
+                    kind: .fill,
+                    chartValue: { metrics in
+                        Double(metrics.gpu_usage[index].usage)
+                            * Double(metrics.gpu_usage[index].frequencyMHz) / 1000
+                    },
+                    detailsValue: { metrics in
+                        Double(metrics.gpu_usage[index].usage)
+                    },
+                    detailsFormatter: Formatters.usage,
+                    detailsGroup: group
+                ),
+            ]
         }
     }
 }
