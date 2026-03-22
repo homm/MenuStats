@@ -65,13 +65,14 @@ final class AppDependencies: ObservableObject {
                 defer { sampler.close() }
 
                 while !Task.isCancelled {
-                    let intervalMs = await MainActor.run { AppDependencies.shared.metricsIntervalMs }
-                    let sampleInterval = Swift.Duration.milliseconds(intervalMs)
-                    let elapsed = lastUpdateStarted.duration(to: clock.now)
+                    while true {
+                        let intervalMs = await MainActor.run { AppDependencies.shared.metricsIntervalMs }
+                        let sampleInterval = Swift.Duration.milliseconds(intervalMs)
+                        let elapsed = lastUpdateStarted.duration(to: clock.now)
+                        guard elapsed < sampleInterval else { break }
 
-                    if elapsed < sampleInterval {
                         do {
-                            try await Task.sleep(for: sampleInterval - elapsed)
+                            try await Task.sleep(for: min(sampleInterval - elapsed, .milliseconds(500)))
                         } catch {
                             break
                         }
