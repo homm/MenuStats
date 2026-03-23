@@ -41,7 +41,7 @@ private struct MaterializedMetricsSample {
     let values: [SeriesValue]
 }
 
-private struct MaterializedChartPoint {
+struct MaterializedChartPoint {
     let descriptorIndex: Int
     let detailsValue: Double
 }
@@ -276,229 +276,13 @@ final class UpperBoundStabilizer {
 }
 
 
-private final class MetricsCurrentValuesRenderer: LineChartRenderer {
-    override func drawExtras(context: CGContext) {
-        super.drawExtras(context: context)
-        guard let chartView = dataProvider as? MetricsLineChartView else { return }
-        let rows = MainActor.assumeIsolated {
-            let slice = chartView.getMaterializedPointsSlice()
-            return MetricsDetailsBuilder.buildRows(
-                from: slice,
-                series: chartView.series
-            )
-        }
-        drawLatestValues(context: context, rows: rows)
-    }
-
-    private func drawLatestValues(context: CGContext, rows: [MetricsDetailsBuilder.Row]) {
-        guard !rows.isEmpty else { return }
-
-        let fontSize: CGFloat = 10
-        let itemAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: fontSize, weight: .bold),
-        ]
-
-        let leftX = viewPortHandler.contentRight
-        let valueTopPadding: CGFloat = 4
-
-        let measuredRows: [[(text: NSAttributedString, size: CGSize)]] = rows.map { row in
-            row.items.map { item in
-                let text = NSAttributedString(
-                    string: item.text,
-                    attributes: itemAttributes.merging([
-                        .foregroundColor: item.color,
-                    ]) { _, new in new }
-                )
-                return (text, text.size())
-            }
-        }
-
-        let totalHeight = measuredRows.reduce(CGFloat.zero) { partial, row in
-            partial + valueTopPadding + row.reduce(CGFloat.zero) { $0 + $1.size.height }
-        }
-        var currentY = viewPortHandler.contentBottom - totalHeight + 4
-
-        for row in measuredRows {
-            currentY += valueTopPadding
-            for item in row {
-                item.text.draw(at: CGPoint(x: leftX, y: currentY))
-                currentY += item.size.height
-            }
-        }
-    }
-}
-
-fileprivate enum MetricsDetailsBuilder {
-    struct Row {
-        struct Item {
-            let text: String
-            let color: NSColor
-        }
-
-        let items: [Item]
-    }
-
-    @MainActor
-    static func buildRows(
-        from slice: [MaterializedChartPoint],
-        series: [MetricsSeriesDescriptor]
-    ) -> [Row] {
-        let sortedSlice = slice.sorted { lhs, rhs in
-            lhs.descriptorIndex < rhs.descriptorIndex
-        }
-
-        var rows: [Row] = []
-        var currentGroup: String?
-        var currentItems: [Row.Item] = []
-
-        func flushCurrentRow() {
-            guard !currentItems.isEmpty else { return }
-            rows.append(.init(items: currentItems))
-            currentItems = []
-        }
-
-        for point in sortedSlice {
-            guard series.indices.contains(point.descriptorIndex) else { continue }
-            let descriptor = series[point.descriptorIndex]
-            guard descriptor.showsDetails else { continue }
-
-            let group = descriptor.detailsGroup ?? "__details_\(point.descriptorIndex)"
-            if currentGroup != group {
-                flushCurrentRow()
-                currentGroup = group
-            }
-
-            let itemColor: NSColor = switch descriptor.kind {
-            case .line:
-                NSColor(descriptor.color)
-            case .fill:
-                .secondaryLabelColor
-            }
-
-            currentItems.append(
-                .init(
-                    text: descriptor.detailsFormatter(point.detailsValue),
-                    color: itemColor
-                )
-            )
-        }
-
-        flushCurrentRow()
-        return rows
-    }
-}
-
-fileprivate final class MetricsDetailsMarker: MarkerView {
-    private var rows: [MetricsDetailsBuilder.Row] = []
-    private let font = NSFont.monospacedSystemFont(ofSize: 10, weight: .bold)
-    private let contentInsets = NSEdgeInsets(top: 8, left: 10, bottom: 8, right: 10)
-    private let rowSpacing: CGFloat = 4
-    private let cornerRadius: CGFloat = 8
-    private let markerSpacing: CGFloat = 8
-
-    @MainActor
-    override func refreshContent(entry: ChartDataEntry, highlight: Highlight) {
-        guard let chartView = chartView as? MetricsLineChartView else {
-            rows = []
-            frame.size = .zero
-            return
-        }
-
-        rows = MetricsDetailsBuilder.buildRows(
-            from: chartView.getMaterializedPointsSlice(x: entry.x),
-            series: chartView.series
-        )
-
-        let itemAttributes: [NSAttributedString.Key: Any] = [.font: font]
-        let rowHeights = rows.map { row in
-            row.items.reduce(CGFloat.zero) { height, item in
-                let text = NSAttributedString(string: item.text, attributes: itemAttributes)
-                return height + text.size().height
-            }
-        }
-        let contentWidth = rows.reduce(CGFloat.zero) { width, row in
-            let rowWidth = row.items.reduce(CGFloat.zero) { partial, item in
-                let text = NSAttributedString(string: item.text, attributes: itemAttributes)
-                return max(partial, text.size().width)
-            }
-            return max(width, rowWidth)
-        }
-        let contentHeight = rowHeights.reduce(CGFloat.zero, +)
-            + rowSpacing * CGFloat(max(rows.count - 1, 0))
-        let size = CGSize(
-            width: contentInsets.left + contentWidth + contentInsets.right,
-            height: contentInsets.top + contentHeight + contentInsets.bottom
-        )
-
-        frame.size = size
-        offset = CGPoint(x: -size.width - markerSpacing, y: -size.height / 2)
-    }
-
-    override func draw(context: CGContext, point: CGPoint) {
-        guard !rows.isEmpty else { return }
-
-        let offset = offsetForDrawing(atPoint: point)
-        let rect = CGRect(
-            x: point.x + offset.x,
-            y: point.y + offset.y,
-            width: bounds.width,
-            height: bounds.height
-        )
-
-        context.saveGState()
-
-        let path = CGPath(
-            roundedRect: rect,
-            cornerWidth: cornerRadius,
-            cornerHeight: cornerRadius,
-            transform: nil
-        )
-        context.addPath(path)
-        context.setFillColor(NSColor.controlBackgroundColor.withAlphaComponent(0.96).cgColor)
-        context.fillPath()
-
-        context.addPath(path)
-        context.setStrokeColor(NSColor.separatorColor.cgColor)
-        context.setLineWidth(1)
-        context.strokePath()
-
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.lineBreakMode = .byClipping
-
-        let itemBaseAttributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .paragraphStyle: paragraphStyle,
-        ]
-
-        var currentY = rect.minY + contentInsets.top
-        for (rowIndex, row) in rows.enumerated() {
-            if rowIndex > 0 {
-                currentY += rowSpacing
-            }
-
-            for item in row.items {
-                let text = NSAttributedString(
-                    string: item.text,
-                    attributes: itemBaseAttributes.merging([
-                        .foregroundColor: item.color,
-                    ]) { _, new in new }
-                )
-                text.draw(at: CGPoint(x: rect.minX + contentInsets.left, y: currentY))
-                currentY += text.size().height
-            }
-        }
-
-        context.restoreGState()
-    }
-}
-
 final class MetricsLineChartView: LineChartView {
     let yMaxStabilizer = UpperBoundStabilizer(
         shrinkThreshold: 0.7,
         steps: [1, 1.5, 2, 3, 4, 5, 6, 8, 10],
         spaceTop: 0.05
     )
-    fileprivate var series: [MetricsSeriesDescriptor] = []
+    var series: [MetricsSeriesDescriptor] = []
     fileprivate var schemaDataSetIndices: [Int] = []
 
     override init(frame: CGRect) {
@@ -517,7 +301,7 @@ final class MetricsLineChartView: LineChartView {
             animator: chartAnimator,
             viewPortHandler: viewPortHandler
         )
-        let marker = MetricsDetailsMarker()
+        let marker = MetricsDetailsMarkerView()
         marker.chartView = self
         self.marker = marker
     }
@@ -534,7 +318,7 @@ final class MetricsLineChartView: LineChartView {
     }
 
     @MainActor
-    fileprivate func getMaterializedPointsSlice(x: Double? = nil) -> [MaterializedChartPoint] {
+    func getMaterializedPointsSlice(x: Double? = nil) -> [MaterializedChartPoint] {
         guard let data else { return [] }
         var slice: [MaterializedChartPoint] = []
 
@@ -596,7 +380,7 @@ private struct MetricsDGChartView: NSViewRepresentable {
             chartView.yMaxStabilizer.reset()
         }
 
-        (chartView.marker as? MetricsDetailsMarker)?.chartView = chartView
+        (chartView.marker as? MetricsDetailsMarkerView)?.chartView = chartView
         chartView.series = controller.series
         chartView.schemaDataSetIndices = makeSchemaDataSetIndices()
         chartView.refreshData()

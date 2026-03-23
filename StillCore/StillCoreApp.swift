@@ -179,19 +179,19 @@ private enum MetricsChartPalette {
 private enum MetricsChartDefinitions {
     private enum Formatters {
         static func watts(_ value: Double) -> String {
-            String(format: "%6.2f", locale: FormatLocale.posix, value)
-        }
-
-        static func temperature(_ value: Double) -> String {
-            String(format: "%6.1f ", locale: FormatLocale.posix, value)
+            String(format: "%.2f", locale: FormatLocale.posix, value)
         }
 
         static func frequencyGHz(_ value: Double) -> String {
-            String(format: "%6.2f", locale: FormatLocale.posix, value)
+            String(format: "%.2f", locale: FormatLocale.posix, value)
         }
 
         static func usage(_ value: Double) -> String {
-            String(format: "%5.1f%%", locale: FormatLocale.posix, value * 100.0)
+            String(format: "%.1f%%", locale: FormatLocale.posix, value * 100.0)
+        }
+
+        static func temperature(_ value: Double) -> String {
+            String(format: "%.1f ", locale: FormatLocale.posix, value)
         }
     }
 
