@@ -19,18 +19,11 @@ final class MetricsCurrentValuesRenderer: LineChartRenderer {
 
     private func drawLatestValues(context: CGContext, attributedText: NSAttributedString) {
         guard attributedText.length > 0 else { return }
-        let textBounds = attributedText.boundingRect(
-            with: CGSize(
-                width: CGFloat.greatestFiniteMagnitude,
-                height: CGFloat.greatestFiniteMagnitude
-            ),
-            options: [.usesLineFragmentOrigin, .usesFontLeading]
-        ).integral
         let textRect = CGRect(
             x: viewPortHandler.contentRight,
-            y: viewPortHandler.contentBottom - textBounds.height,
+            y: viewPortHandler.contentTop,
             width: 40,
-            height: textBounds.height
+            height: CGFloat.greatestFiniteMagnitude
         )
         attributedText.draw(with: textRect, options: [.usesLineFragmentOrigin, .usesFontLeading])
     }
