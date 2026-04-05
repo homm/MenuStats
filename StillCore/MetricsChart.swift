@@ -170,7 +170,9 @@ final class ChartDataController {
 
         dataSets.forEach { dataSet in
             guard dataSet.count > trimThreshold else { return }
-            dataSet.removeFirst(dataSet.count - capacity)
+            // Keep one extra historical sample so the marker can disappear cleanly
+            // when the viewport shrinks past the previously highlighted point.
+            dataSet.removeFirst(dataSet.count - capacity - 1)
         }
     }
 }
@@ -493,7 +495,7 @@ private struct MetricsDGChartView: NSViewRepresentable {
 
     private func configureAxes(_ chartView: MetricsLineChartView) {
         let xAxis = chartView.xAxis
-        xAxis.axisMinimum = Double(controller.rightBoundary - capacity)
+        xAxis.axisMinimum = Double(controller.rightBoundary - capacity + 1)
         // Visual compensation for drawing outside of edge
         xAxis.axisMaximum = Double(controller.rightBoundary) + 0.1
 
