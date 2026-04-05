@@ -201,7 +201,7 @@ private enum MetricsChartDefinitions {
         }
 
         static func temperature(_ value: Double) -> String {
-            String(format: "%.1f ", locale: FormatLocale.posix, value)
+            String(format: "%.1f", locale: FormatLocale.posix, value)
         }
     }
 

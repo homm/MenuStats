@@ -11,7 +11,7 @@ final class MetricsCurrentValuesRenderer: LineChartRenderer {
                 series: chartView.series
             )
         }
-        let attributedText = MetricsDetailsTextBuilder.buildCurrentValuesText(
+        let attributedText = MetricsDetailsTextBuilder.buildDetailsText(
             from: rows
         )
         drawLatestValues(context: context, attributedText: attributedText)
@@ -93,48 +93,7 @@ enum MetricsDetailsTextBuilder {
     private static var font: NSFont { NSFont.monospacedSystemFont(ofSize: 10, weight: .bold) }
     private static let rowSpacing: CGFloat = 4
 
-    static func buildMarkerText(from rows: [MetricsDetailsBuilder.Row]) -> NSAttributedString {
-        let columnWidths = rows.reduce(into: [Int]()) { widths, row in
-            for (index, item) in row.items.enumerated() {
-                if widths.count == index {
-                    widths.append(item.text.count)
-                } else {
-                    widths[index] = max(widths[index], item.text.count)
-                }
-            }
-        }
-        let text = NSMutableAttributedString()
-
-        for row in rows {
-            if text.length > 0 {
-                text.append(NSAttributedString(string: "\n"))
-            }
-
-            for (itemIndex, item) in row.items.enumerated() {
-                let paragraphStyle = NSMutableParagraphStyle()
-                paragraphStyle.alignment = .right
-                let paddedText = item.text.leftPadding(
-                    toLength: columnWidths[itemIndex],
-                    withPad: " "
-                )
-
-                text.append(
-                    NSAttributedString(
-                        string: (itemIndex == 0 ? "" : " ") + paddedText,
-                        attributes: [
-                            .font: font,
-                            .foregroundColor: item.color,
-                            .paragraphStyle: paragraphStyle,
-                        ]
-                    )
-                )
-            }
-        }
-
-        return text
-    }
-
-    static func buildCurrentValuesText(from rows: [MetricsDetailsBuilder.Row]) -> NSAttributedString {
+    static func buildDetailsText(from rows: [MetricsDetailsBuilder.Row]) -> NSAttributedString {
         let text = NSMutableAttributedString()
 
         for (rowIndex, row) in rows.enumerated() {
@@ -168,13 +127,6 @@ enum MetricsDetailsTextBuilder {
     }
 }
 
-private extension String {
-    func leftPadding(toLength length: Int, withPad pad: Character) -> String {
-        guard count < length else { return self }
-        return String(repeating: String(pad), count: length - count) + self
-    }
-}
-
 class FormattedTextMarkerView: MarkerView {
     var attributedText = NSAttributedString() {
         didSet {
@@ -182,7 +134,7 @@ class FormattedTextMarkerView: MarkerView {
         }
     }
 
-    private let contentInsets = NSEdgeInsets(top: 4, left: 4, bottom: 4, right: 4)
+    private let contentInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
     private let cornerRadius: CGFloat = 4
     private let markerSpacing: CGFloat = 4
 
@@ -260,6 +212,6 @@ final class MetricsDetailsMarkerView: FormattedTextMarkerView {
             from: chartView.getMaterializedPointsSlice(x: entry.x),
             series: chartView.series
         )
-        attributedText = MetricsDetailsTextBuilder.buildMarkerText(from: rows)
+        attributedText = MetricsDetailsTextBuilder.buildDetailsText(from: rows)
     }
 }
