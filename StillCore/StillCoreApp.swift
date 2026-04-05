@@ -101,7 +101,7 @@ final class AppDependencies: ObservableObject {
                 }
             } catch {
                 await MainActor.run {
-                    AppDependencies.shared.metricsError = "Macmon metrics error: \(error)"
+                    AppDependencies.shared.metricsError = String(describing: error)
                     AppDependencies.shared.metricsTask = nil
                 }
             }
@@ -419,52 +419,53 @@ struct ContentView: View {
             Divider()
                 .background(Color(nsColor: .textColor))
 
-            let graphPadding: CGFloat = 8
-            let backgroundColor = Color(.textBackgroundColor)
-                .padding(.horizontal, -12)
-                .padding(.top, -graphPadding)
-                .padding(.bottom, -graphPadding + 4)
-            GeometryReader { metrics in
-                VStack(spacing: graphPadding * 2 - 2) {
-                    MetricsChartSection(
-                        definition: MetricsChartDefinitions.power,
-                        metricsPublisher: dependencies.metricsPublisher,
-                        capacity: AppPresentation.chartHistoryCapacity,
-                        showUpdates: presentationState.isWindowVisible,
-                        highlightedSampleX: $highlightedChartSampleX
-                    )
-                        .frame(height: metrics.size.height * 0.35)
-                        .background(backgroundColor)
-
-                    MetricsChartSection(
-                        definition: MetricsChartDefinitions.frequency,
-                        metricsPublisher: dependencies.metricsPublisher,
-                        capacity: AppPresentation.chartHistoryCapacity,
-                        showUpdates: presentationState.isWindowVisible,
-                        highlightedSampleX: $highlightedChartSampleX
-                    )
-                        .frame(height: metrics.size.height * 0.35)
-                        .background(backgroundColor)
-
-                    MetricsChartSection(
-                        definition: MetricsChartDefinitions.temperature,
-                        metricsPublisher: dependencies.metricsPublisher,
-                        capacity: AppPresentation.chartHistoryCapacity,
-                        showUpdates: presentationState.isWindowVisible,
-                        highlightedSampleX: $highlightedChartSampleX,
-                        yAxisLabelCount: 4,
-                        yStart: 30
-                    )
-                        .background(backgroundColor)
-                }
-                    .padding(.bottom, -4)
-            }
-
             if !dependencies.metricsError.isEmpty {
-                Text(dependencies.metricsError)
+                Text("Macmon error: \(dependencies.metricsError)")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
+            } else {
+                let graphPadding: CGFloat = 8
+                let backgroundColor = Color(.textBackgroundColor)
+                    .padding(.horizontal, -12)
+                    .padding(.top, -graphPadding)
+                    .padding(.bottom, -graphPadding + 4)
+                GeometryReader { metrics in
+                    VStack(spacing: graphPadding * 2 - 2) {
+                        MetricsChartSection(
+                            definition: MetricsChartDefinitions.power,
+                            metricsPublisher: dependencies.metricsPublisher,
+                            capacity: AppPresentation.chartHistoryCapacity,
+                            showUpdates: presentationState.isWindowVisible,
+                            highlightedSampleX: $highlightedChartSampleX
+                        )
+                            .frame(height: metrics.size.height * 0.35)
+                            .background(backgroundColor)
+
+                        MetricsChartSection(
+                            definition: MetricsChartDefinitions.frequency,
+                            metricsPublisher: dependencies.metricsPublisher,
+                            capacity: AppPresentation.chartHistoryCapacity,
+                            showUpdates: presentationState.isWindowVisible,
+                            highlightedSampleX: $highlightedChartSampleX
+                        )
+                            .frame(height: metrics.size.height * 0.35)
+                            .background(backgroundColor)
+
+                        MetricsChartSection(
+                            definition: MetricsChartDefinitions.temperature,
+                            metricsPublisher: dependencies.metricsPublisher,
+                            capacity: AppPresentation.chartHistoryCapacity,
+                            showUpdates: presentationState.isWindowVisible,
+                            highlightedSampleX: $highlightedChartSampleX,
+                            yAxisLabelCount: 4,
+                            yStart: 30
+                        )
+                            .background(backgroundColor)
+                    }
+                        .padding(.bottom, -4)
+                }
             }
 
             Divider()
