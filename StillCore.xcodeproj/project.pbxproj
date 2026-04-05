@@ -7,7 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		AFFC83392E59EAD40095EE6D /* battery_tracker in CopyFiles */ = {isa = PBXBuildFile; fileRef = AFFC83322E59EA600095EE6D /* battery_tracker */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		AF2B00012F00000100000001 /* BatteryTrackerHelper in CopyFiles */ = {isa = PBXBuildFile; fileRef = AF2B00022F00000100000001 /* BatteryTrackerHelper */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		AF2B000A2F00000100000001 /* com.github.homm.StillCore.BatteryTracker.plist in Copy LaunchAgent */ = {isa = PBXBuildFile; fileRef = AF2B00092F00000100000001 /* com.github.homm.StillCore.BatteryTracker.plist */; };
 		B0A000012E5A000100000001 /* MacmonSwift in Frameworks */ = {isa = PBXBuildFile; productRef = B0A000032E5A000100000001 /* MacmonSwift */; };
 		B0A000042E5A000100000001 /* DGCharts in Frameworks */ = {isa = PBXBuildFile; productRef = B0A000062E5A000100000001 /* DGCharts */; };
 /* End PBXBuildFile section */
@@ -19,11 +20,21 @@
 			dstPath = Contents/MacOS;
 			dstSubfolderSpec = 1;
 			files = (
-				AFFC83392E59EAD40095EE6D /* battery_tracker in CopyFiles */,
+				AF2B00012F00000100000001 /* BatteryTrackerHelper in CopyFiles */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		AFFC83302E59EA600095EE6D /* CopyFiles */ = {
+		AF2B000B2F00000100000001 /* Copy LaunchAgent */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Contents/Library/LaunchAgents;
+			dstSubfolderSpec = 1;
+			files = (
+				AF2B000A2F00000100000001 /* com.github.homm.StillCore.BatteryTracker.plist in Copy LaunchAgent */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AF2B00082F00000100000001 /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = /usr/share/man/man1/;
@@ -36,36 +47,42 @@
 
 /* Begin PBXFileReference section */
 		AF9513E52E59D8B900550A10 /* StillCore.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = StillCore.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		AFFC83322E59EA600095EE6D /* battery_tracker */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = battery_tracker; sourceTree = BUILT_PRODUCTS_DIR; };
+		AF2B00022F00000100000001 /* BatteryTrackerHelper */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = BatteryTrackerHelper; sourceTree = BUILT_PRODUCTS_DIR; };
+		AF2B00092F00000100000001 /* com.github.homm.StillCore.BatteryTracker.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = BatteryTrackerLaunchAgent/com.github.homm.StillCore.BatteryTracker.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		AF2B00032F00000100000001 /* BatteryTrackerHelper */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = BatteryTrackerHelper;
+			sourceTree = "<group>";
+		};
+		AF2B00042F00000100000001 /* BatteryTrackingShared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = BatteryTrackingShared;
+			sourceTree = "<group>";
+		};
 		AF9513E72E59D8B900550A10 /* StillCore */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = StillCore;
 			sourceTree = "<group>";
 		};
-		AFFC83332E59EA600095EE6D /* battery_tracker */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = battery_tracker;
-			sourceTree = "<group>";
-		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		AF2B00072F00000100000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		AF9513E22E59D8B900550A10 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				B0A000042E5A000100000001 /* DGCharts in Frameworks */,
 				B0A000012E5A000100000001 /* MacmonSwift in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		AFFC832F2E59EA600095EE6D /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -76,7 +93,9 @@
 			isa = PBXGroup;
 			children = (
 				AF9513E72E59D8B900550A10 /* StillCore */,
-				AFFC83332E59EA600095EE6D /* battery_tracker */,
+				AF2B00042F00000100000001 /* BatteryTrackingShared */,
+				AF2B00032F00000100000001 /* BatteryTrackerHelper */,
+				AF2B00092F00000100000001 /* com.github.homm.StillCore.BatteryTracker.plist */,
 				AF9513E62E59D8B900550A10 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -85,7 +104,7 @@
 			isa = PBXGroup;
 			children = (
 				AF9513E52E59D8B900550A10 /* StillCore.app */,
-				AFFC83322E59EA600095EE6D /* battery_tracker */,
+				AF2B00022F00000100000001 /* BatteryTrackerHelper */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -101,6 +120,7 @@
 				AF9513E22E59D8B900550A10 /* Frameworks */,
 				AF9513E32E59D8B900550A10 /* Resources */,
 				AFFC83242E59E0410095EE6D /* CopyFiles */,
+				AF2B000B2F00000100000001 /* Copy LaunchAgent */,
 			);
 			buildRules = (
 			);
@@ -108,6 +128,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				AF9513E72E59D8B900550A10 /* StillCore */,
+				AF2B00042F00000100000001 /* BatteryTrackingShared */,
 			);
 			name = StillCore;
 			packageProductDependencies = (
@@ -118,26 +139,27 @@
 			productReference = AF9513E52E59D8B900550A10 /* StillCore.app */;
 			productType = "com.apple.product-type.application";
 		};
-		AFFC83312E59EA600095EE6D /* battery_tracker */ = {
+		AF2B00052F00000100000001 /* BatteryTrackerHelper */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = AFFC83362E59EA600095EE6D /* Build configuration list for PBXNativeTarget "battery_tracker" */;
+			buildConfigurationList = AF2B00102F00000100000001 /* Build configuration list for PBXNativeTarget "BatteryTrackerHelper" */;
 			buildPhases = (
-				AFFC832E2E59EA600095EE6D /* Sources */,
-				AFFC832F2E59EA600095EE6D /* Frameworks */,
-				AFFC83302E59EA600095EE6D /* CopyFiles */,
+				AF2B00062F00000100000001 /* Sources */,
+				AF2B00072F00000100000001 /* Frameworks */,
+				AF2B00082F00000100000001 /* CopyFiles */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				AFFC83332E59EA600095EE6D /* battery_tracker */,
+				AF2B00032F00000100000001 /* BatteryTrackerHelper */,
+				AF2B00042F00000100000001 /* BatteryTrackingShared */,
 			);
-			name = battery_tracker;
+			name = BatteryTrackerHelper;
 			packageProductDependencies = (
 			);
-			productName = battery_tracker;
-			productReference = AFFC83322E59EA600095EE6D /* battery_tracker */;
+			productName = BatteryTrackerHelper;
+			productReference = AF2B00022F00000100000001 /* BatteryTrackerHelper */;
 			productType = "com.apple.product-type.tool";
 		};
 /* End PBXNativeTarget section */
@@ -153,7 +175,7 @@
 					AF9513E42E59D8B900550A10 = {
 						CreatedOnToolsVersion = 16.4;
 					};
-					AFFC83312E59EA600095EE6D = {
+					AF2B00052F00000100000001 = {
 						CreatedOnToolsVersion = 16.4;
 					};
 				};
@@ -177,7 +199,7 @@
 			projectRoot = "";
 			targets = (
 				AF9513E42E59D8B900550A10 /* StillCore */,
-				AFFC83312E59EA600095EE6D /* battery_tracker */,
+				AF2B00052F00000100000001 /* BatteryTrackerHelper */,
 			);
 		};
 /* End PBXProject section */
@@ -194,14 +216,14 @@
 
 
 /* Begin PBXSourcesBuildPhase section */
-		AF9513E12E59D8B900550A10 /* Sources */ = {
+		AF2B00062F00000100000001 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		AFFC832E2E59EA600095EE6D /* Sources */ = {
+		AF9513E12E59D8B900550A10 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -415,25 +437,37 @@
 			};
 			name = Release;
 		};
-		AFFC83372E59EA600095EE6D /* Debug */ = {
+		AF2B000E2F00000100000001 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ARCHS = arm64;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
-				INSTALL_PATH = "";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = RB6B3G235C;
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.github.homm.StillCore.BatteryTrackerHelper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
 		};
-		AFFC83382E59EA600095EE6D /* Release */ = {
+		AF2B000F2F00000100000001 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ARCHS = arm64;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
-				INSTALL_PATH = "";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = RB6B3G235C;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.github.homm.StillCore.BatteryTrackerHelper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
 		};
@@ -458,11 +492,11 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		AFFC83362E59EA600095EE6D /* Build configuration list for PBXNativeTarget "battery_tracker" */ = {
+		AF2B00102F00000100000001 /* Build configuration list for PBXNativeTarget "BatteryTrackerHelper" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				AFFC83372E59EA600095EE6D /* Debug */,
-				AFFC83382E59EA600095EE6D /* Release */,
+				AF2B000E2F00000100000001 /* Debug */,
+				AF2B000F2F00000100000001 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

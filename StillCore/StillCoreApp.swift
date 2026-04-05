@@ -388,8 +388,8 @@ When usage is at 100%, the area reaches the line.
 // MARK: - SwiftUI content for the popover/window
 struct ContentView: View {
     @ObservedObject private var dependencies = AppDependencies.shared
+    @ObservedObject private var batteryTrackerService = BatteryTrackerService.shared
     @ObservedObject var presentationState: MenuPresentationState
-    @State private var lastBatteryStatus: String = ""
     @State private var highlightedChartSampleX: Double?
 
     var body: some View {
@@ -487,29 +487,39 @@ struct ContentView: View {
                 Spacer()
             }
 
-            if !lastBatteryStatus.isEmpty {
-                Divider()
-                Text(lastBatteryStatus)
-                    .textSelection(.enabled)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear {
-            DispatchQueue.global(qos: .utility).async {
-                if let exeDir = Bundle.main.executableURL?.deletingLastPathComponent() {
-                    let exe = exeDir.appendingPathComponent("battery_tracker").path
-                    let status = run_once(exe, ["status"]) ?? "(no output)"
-                    DispatchQueue.main.async {
-                        self.lastBatteryStatus = status.trimmingCharacters(in: .whitespacesAndNewlines)
+            Divider()
+            VStack(alignment: .leading, spacing: 6) {
+                if let actionTitle = batteryTrackerService.actionTitle {
+                    HStack(spacing: 8) {
+                        Text("Battery tracker:")
+                        if batteryTrackerService.installState != .requiresApproval {
+                            Text(batteryTrackerService.runtimeLabel)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button(actionTitle) {
+                            batteryTrackerService.performPrimaryAction()
+                        }
                     }
+                } else if !batteryTrackerService.statusText.isEmpty {
+                    Text(batteryTrackerService.statusText)
+                        .textSelection(.enabled)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if batteryTrackerService.actionTitle == nil && !batteryTrackerService.lastErrorMessage.isEmpty {
+                    Text(batteryTrackerService.lastErrorMessage)
+                        .textSelection(.enabled)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var intervalLabel: String {
