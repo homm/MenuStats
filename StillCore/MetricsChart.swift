@@ -95,10 +95,6 @@ final class ChartDataController {
         return UpdateResult(schemaChanged: schemaChanged)
     }
 
-    var rawYMax: Double {
-        data?.getYMax(axis: .left) ?? 0
-    }
-
     private func rebuildEmptyData(
         series: [MetricsSeriesDescriptor]
     ) {
@@ -229,6 +225,11 @@ final class MetricsChartStore: ObservableObject {
 
 final class UpperBoundStabilizer {
     private(set) var current: Double = -.infinity
+    private let clock = ContinuousClock()
+    private let retentionDuration: Duration = .seconds(15)
+    private var lastVisibleHeight: Double?
+    private var retainedOffscreenHeight: Double?
+    private var retainedOffscreenExpiresAt: ContinuousClock.Instant?
 
     /// If the new quantized value is sufficiently below the current bound,
     /// the upper bound is allowed to shrink.
@@ -249,18 +250,44 @@ final class UpperBoundStabilizer {
 
     func reset() {
         current = -.infinity
+        lastVisibleHeight = nil
+        retainedOffscreenHeight = nil
+        retainedOffscreenExpiresAt = nil
     }
 
     func update(height: Double) -> Double {
-        guard height > 0 else { return 0 }
+        let now = clock.now
+        expireRetainedHeightIfNeeded(now: now)
 
-        let newHeight = quantizeUp(height * (1 + spaceTop))
+        if let lastVisibleHeight, height < lastVisibleHeight {
+            let candidateRetainedHeight = lastVisibleHeight
+
+            if candidateRetainedHeight > (retainedOffscreenHeight ?? 0) {
+                retainedOffscreenHeight = candidateRetainedHeight
+                retainedOffscreenExpiresAt = now.advanced(by: retentionDuration)
+            }
+        }
+
+        self.lastVisibleHeight = height
+
+        let effectiveHeight = max(height, retainedOffscreenHeight ?? 0)
+        guard effectiveHeight > 0 else { return 0 }
+
+        let newHeight = quantizeUp(effectiveHeight * (1 + spaceTop))
 
         if newHeight > current || newHeight < current * shrinkThreshold {
             current = newHeight
         }
 
         return current
+    }
+
+    private func expireRetainedHeightIfNeeded(now: ContinuousClock.Instant) {
+        guard let retainedOffscreenExpiresAt else { return }
+        guard retainedOffscreenExpiresAt <= now else { return }
+
+        retainedOffscreenHeight = nil
+        self.retainedOffscreenExpiresAt = nil
     }
 
     private func quantizeUp(_ value: Double) -> Double {
@@ -487,7 +514,13 @@ private struct MetricsDGChartView: NSViewRepresentable {
     }
 
     private func getYMax(_ chartView: MetricsLineChartView) -> Double {
-        chartView.yMaxStabilizer.update(height: controller.rawYMax - yStart) + yStart
+        let visibleMinX = chartView.lowestVisibleX
+        let visibleMaxX = chartView.highestVisibleX
+        controller.data?.calcMinMaxY(fromX: visibleMinX, toX: visibleMaxX)
+
+        let rawVisibleYMax = controller.data?.getYMax(axis: .left) ?? yStart
+        let visibleHeight = max(0, rawVisibleYMax - yStart)
+        return chartView.yMaxStabilizer.update(height: visibleHeight) + yStart
     }
 
     private func configureLegend(_ chartView: LineChartView) {
