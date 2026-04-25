@@ -9,21 +9,32 @@ StillCore is a macOS menu bar utility for Apple Silicon metrics. It shows live c
 - macOS 14 or newer
 - Apple Silicon Mac
 
-## Build And Run
+## Download
+
+Prebuilt downloads are not published yet. For now, build StillCore from source.
+
+## Build From Source
 
 Building from source requires Xcode with Swift 6 support and network access for Swift Package dependencies.
 
-Build the debug app:
+Create a local DMG from source:
 
 ```sh
-make app
+make release-dmg
 ```
 
-The app bundle is written to:
+This creates the Release `StillCore.dmg`.
 
-```text
-.build/Build/Products/Debug/StillCore.app
+Remove build artifacts:
+
+```sh
+make clean
 ```
+
+## Development
+
+Development builds use `CONFIGURATION=Debug` by default.
+Pass `CONFIGURATION=Release` to build and run the Release configuration with the same command.
 
 Build and run from the terminal:
 
@@ -35,58 +46,6 @@ Build and open the app bundle:
 
 ```sh
 make open-app
-```
-
-Remove build artifacts:
-
-```sh
-make clean
-```
-
-## Release Build
-
-Release builds require Apple Developer signing credentials and a notarytool profile.
-
-Create a signed, notarized DMG:
-
-```sh
-make release DEVELOPMENT_TEAM=<team-id>
-```
-
-`make release` builds the Release configuration, signs with `Developer ID Application`, creates `StillCore.dmg`, submits it for notarization, staples the notarization ticket, validates the result, and prints the final artifact path.
-
-The DMG contains `StillCore.app` and an `Applications` symlink for drag-to-install.
-
-The default notarytool keychain profile is:
-
-```text
-StillCore-Notarization
-```
-
-Create the profile once before running `make release`:
-
-```sh
-xcrun notarytool store-credentials "StillCore-Notarization" --apple-id "<apple-id>" --team-id "<team-id>"
-```
-
-`notarytool` prompts for the app-specific password and stores the credentials in Keychain. To use a different profile name, pass `NOTARY_PROFILE=...`:
-
-```sh
-make release DEVELOPMENT_TEAM=<team-id> NOTARY_PROFILE=<profile-name>
-```
-
-## Development Commands
-
-Build with the local workspace and local `macmon` xcframework:
-
-```sh
-LOCAL=1 make app
-```
-
-Build with an explicit workspace override:
-
-```sh
-WORKSPACE=<workspace-name> make app
 ```
 
 Rebuild the app and restart the battery helper if it is already registered:
@@ -101,8 +60,33 @@ Launch Instruments Time Profiler for a Release build:
 make profile
 ```
 
-Run chart benchmarks:
+## Local Metrics Core Development
+
+Use `LOCAL=1` when you want to develop or test StillCore together
+with local changes in the metrics collection core.
+
+Additional requirements:
+
+- Rust toolchain with Cargo
+- Xcode command line tools
+- Local checkouts of `macmon` and `macmon-bindings` next to this repository
+
+Clone the sibling repositories and build the local `macmon` xcframework:
 
 ```sh
-make benchmarks
+cd ..
+git clone --branch cluster-independent https://github.com/homm/macmon.git
+git clone https://github.com/homm/macmon-bindings.git
+cd macmon
+make xcframework
+cd ../StillCore
 ```
+
+Build and open StillCore against the local metrics core:
+
+```sh
+LOCAL=1 make open-app
+```
+
+`LOCAL=1` uses `StillCore.local.xcworkspace`, expects `../macmon/dist/CMacmon.xcframework`,
+and uses the sibling `../macmon-bindings` checkout.
