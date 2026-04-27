@@ -564,6 +564,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             configureStatusItem: { statusItem in
                 guard let button = statusItem.button else { return }
                 button.image = nil
+                button.font = self.statusItemFont
                 button.toolTip = AppPresentation.statusItemToolTip
                 self.applyStatusItemDisplay(metrics: nil, to: statusItem)
             },
@@ -587,9 +588,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if statusItemDisplayDescriptors.isEmpty {
             buildStatusItemMenu(with: metrics)
         }
-        selectedStatusItemDisplayPersistenceValue = sanitizedPersistenceValue(selectedStatusItemDisplayPersistenceValue)
-        AppSettings.statusItemDisplayMode = selectedStatusItemDisplayPersistenceValue
-        updateStatusItemMenuSelection()
+        let sanitizedPersistenceValue = sanitizedPersistenceValue(selectedStatusItemDisplayPersistenceValue)
+        if selectedStatusItemDisplayPersistenceValue != sanitizedPersistenceValue {
+            selectedStatusItemDisplayPersistenceValue = sanitizedPersistenceValue
+            AppSettings.statusItemDisplayMode = selectedStatusItemDisplayPersistenceValue
+            updateStatusItemMenuSelection()
+        }
         applyStatusItemDisplay(metrics: metrics, to: statusItem)
     }
 
@@ -613,13 +617,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         String(format: "%4.1f Gb", locale: FormatLocale.posix, valueGb)
     }
 
-    private func applyStatusItemTitle(_ title: String, to statusItem: NSStatusItem) {
-        let attributedTitle = NSAttributedString(string: title, attributes: [.font: statusItemFont])
-        statusItem.button?.image = nil
-        statusItem.button?.attributedTitle = attributedTitle
-        statusItem.length = ceil(attributedTitle.size().width)
-    }
-
     private func buildStatusItemMenu(with metrics: Metrics) {
         statusItemDisplayDescriptors = makeStatusItemDisplayDescriptors(metrics: metrics)
         statusItemMenu.insertItem(.separator(), at: 0)
@@ -637,24 +634,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applyStatusItemDisplay(metrics: Metrics?, to statusItem: NSStatusItem) {
-        guard
+        if
             let metrics,
             let descriptor = selectedStatusItemDisplayDescriptor,
             let value = descriptor.getValue(metrics)
-        else {
+        {
+            applyStatusItemTitle(descriptor.formatValue(value), to: statusItem)
+        } else {
             applyStatusItemIcon(to: statusItem)
-            return
         }
-
-        applyStatusItemTitle(descriptor.formatValue(value), to: statusItem)
     }
 
     private func applyStatusItemIcon(to statusItem: NSStatusItem) {
-        let image = NSImage(systemSymbolName: AppPresentation.statusItemSystemImageName, accessibilityDescription: AppPresentation.statusItemToolTip)
+        guard let button = statusItem.button else { return }
+        if button.image != nil && button.title.isEmpty {
+            return
+        }
+        let image = NSImage(
+            systemSymbolName: AppPresentation.statusItemSystemImageName,
+            accessibilityDescription: AppPresentation.statusItemToolTip
+        )
         image?.isTemplate = true
-        statusItem.button?.image = image
-        statusItem.button?.attributedTitle = NSAttributedString(string: "")
-        statusItem.length = NSStatusItem.variableLength
+        button.image = image
+        button.title = ""
+    }
+
+    private func applyStatusItemTitle(_ title: String, to statusItem: NSStatusItem) {
+        guard let button = statusItem.button else { return }
+        if button.image != nil {
+            button.image = nil
+        }
+        if button.title != title {
+            button.title = title
+        }
     }
 
     private func sanitizedPersistenceValue(_ persistenceValue: String) -> String {
