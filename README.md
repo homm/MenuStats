@@ -11,7 +11,8 @@ StillCore is a macOS menu bar utility for Apple Silicon metrics. It shows live c
 
 ## Download
 
-Prebuilt downloads are not published yet. For now, build StillCore from source.
+Prebuilt downloads are available on the GitHub releases page:
+https://github.com/homm/StillCore/releases
 
 ## Build From Source
 

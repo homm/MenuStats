@@ -8,6 +8,11 @@ DERIVED_DATA := .build
 XCODEBUILD_FLAGS := \
 	-quiet -hideShellScriptEnvironment \
 	ENABLE_CODE_COVERAGE=NO
+NOTARIZATION_FLAGS := \
+	CODE_SIGN_IDENTITY="Developer ID Application" \
+	CODE_SIGN_STYLE=Manual \
+	CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
+	OTHER_CODE_SIGN_FLAGS="--timestamp"
 
 ifneq ($(LOCAL),)
     WORKSPACE := $(NAME).local
@@ -57,7 +62,7 @@ app:
 	$(XCODEBUILD_FLAGS)
 
 .PHONY: release
-release: XCODEBUILD_FLAGS += CODE_SIGN_IDENTITY="Developer ID Application"
+release: XCODEBUILD_FLAGS += $(NOTARIZATION_FLAGS)
 release: release-dmg
 	@if xcrun notarytool history --keychain-profile "$(NOTARY_PROFILE)" >/dev/null 2>&1; then \
 		:; \
