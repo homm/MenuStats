@@ -31,7 +31,6 @@ enum AppSettings {
 enum AppPresentation {
     static let windowMinSize = CGSize(width: 420, height: 560)
     static let statusItemSystemImageName = "chart.bar.xaxis"
-    static let statusItemFallbackTitle = "Core"
     static let statusItemToolTip = "StillCore"
     static let pinnedWindowTitle = "StillCore"
     static let chartHistoryCapacity = 180
@@ -409,6 +408,7 @@ struct ContentView: View {
                     )
                 ) {
                     Image(systemName: "pin")
+                        .rotationEffect(presentationState.mode == .pinned ? .zero : .degrees(35))
                 }
                     .toggleStyle(.button)
                     .help(presentationState.mode == .pinned ? "Attach to menu bar" : "Keep window open")

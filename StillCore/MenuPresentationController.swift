@@ -11,16 +11,12 @@ final class MenuPresentationState: ObservableObject {
     @Published private(set) var mode: PresentationMode = .attached
     @Published private(set) var isWindowVisible: Bool = false
 
-    private var onModeChange: ((PresentationMode) -> Void)?
+    fileprivate var onModeChange: (() -> Void)?
 
     func setPresentationMode(_ mode: PresentationMode) {
         guard self.mode != mode else { return }
         self.mode = mode
-        onModeChange?(mode)
-    }
-
-    fileprivate func bind(onModeChange: @escaping (PresentationMode) -> Void) {
-        self.onModeChange = onModeChange
+        onModeChange?()
     }
 
     fileprivate func setWindowVisible(_ isVisible: Bool) {
@@ -29,20 +25,66 @@ final class MenuPresentationState: ObservableObject {
     }
 }
 
-private let bootstrapWindowFrame = NSRect(x: 0, y: 0, width: 1, height: 1)
+private final class AttachedWindow: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
 
-@MainActor
-private func makeHostingContainer(rootView: AnyView) -> (containerView: NSView, hostingView: NSHostingView<AnyView>) {
-    let hostingView = NSHostingView(rootView: rootView)
-    hostingView.sizingOptions = []
+    init() {
+        super.init(
+            contentRect: .zero,
+            styleMask: [
+                .nonactivatingPanel, .fullSizeContentView,
+                .titled, .utilityWindow, .closable, .resizable,
+            ],
+            backing: .buffered,
+            defer: false
+        )
+        contentView = NSView()
+        isReleasedWhenClosed = false
+        level = .mainMenu
+        collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
 
-    let containerView = NSView(frame: bootstrapWindowFrame)
-    containerView.autoresizesSubviews = true
-    hostingView.frame = containerView.bounds
-    hostingView.autoresizingMask = [.width, .height]
-    containerView.addSubview(hostingView)
+        titleVisibility = .hidden
+        titlebarAppearsTransparent = true
+        animationBehavior = .none
+        for buttonType in [
+            NSWindow.ButtonType.closeButton, .miniaturizeButton,
+            .zoomButton, .toolbarButton, .documentIconButton, .documentVersionsButton,
+        ] {
+            standardWindowButton(buttonType)?.isHidden = true
+        }
+    }
 
-    return (containerView, hostingView)
+    func repositionWindow(relativeTo button: NSView?) {
+        guard
+            let button,
+            let buttonWindow = button.window,
+            let visibleFrame = buttonWindow.screen?.visibleFrame
+        else { return }
+
+        let buttonFrameInWindow = button.convert(button.bounds, to: nil)
+        let buttonFrameOnScreen = buttonWindow.convertToScreen(buttonFrameInWindow)
+
+        var originX = buttonFrameOnScreen.midX - (frame.size.width / 2)
+        originX = min(max(originX, visibleFrame.minX), visibleFrame.maxX - frame.size.width)
+
+        let originY = max(visibleFrame.minY, buttonFrameOnScreen.minY - frame.size.height)
+        setFrameOrigin(NSPoint(x: originX, y: originY))
+    }
+}
+
+private final class PinnedWindow: NSWindow {
+    init() {
+        super.init(
+            contentRect: .zero,
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        contentView = NSView()
+        isReleasedWhenClosed = false
+        collectionBehavior = [.moveToActiveSpace, .fullScreenNone]
+    }
 }
 
 @MainActor
@@ -53,10 +95,11 @@ final class MenuPresentationController<Content: View>: NSObject, NSWindowDelegat
     private let presentationState = MenuPresentationState()
     private let statusItemMenu: NSMenu?
     private let hostingView: NSHostingView<AnyView>
-    private let managedWindow: NSWindow
+    private var currentWindow: NSWindow
+    private let attachedWindow: AttachedWindow
+    private let pinnedWindow: PinnedWindow
 
     var statusItem: NSStatusItem { statusItemStorage }
-    var window: NSWindow { managedWindow }
     private var presentationMode: PresentationMode { presentationState.mode }
 
     init(
@@ -65,86 +108,91 @@ final class MenuPresentationController<Content: View>: NSObject, NSWindowDelegat
         configureStatusItem: ((NSStatusItem) -> Void)? = nil,
         configureWindow: ((NSWindow) -> Void)? = nil
     ) {
-        let hosted = makeHostingContainer(rootView: AnyView(content(presentationState)))
-        hostingView = hosted.hostingView
+        hostingView = NSHostingView(rootView: AnyView(content(presentationState)))
+        hostingView.sizingOptions = []
+        hostingView.safeAreaRegions = []
+        hostingView.autoresizingMask = [.width, .height]
+
         self.statusItemMenu = statusItemMenu
 
-        managedWindow = NSWindow(
-            contentRect: bootstrapWindowFrame,
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        managedWindow.contentView = hosted.containerView
-        managedWindow.isReleasedWhenClosed = false
+        attachedWindow = AttachedWindow()
+        pinnedWindow = PinnedWindow()
+        currentWindow = attachedWindow
 
         super.init()
 
-        managedWindow.delegate = self
+        attachedWindow.delegate = self
+        pinnedWindow.delegate = self
         configureStatusItem?(statusItemStorage)
-        configureWindow?(managedWindow)
+        configureWindow?(attachedWindow)
+        configureWindow?(pinnedWindow)
         configureStatusItemAction()
 
-        presentationState.bind { [weak self] nextMode in
-            self?.setPresentationMode(nextMode)
+        presentationState.onModeChange = { [weak self] in
+            guard let self else { return }
+
+            if presentationMode == .attached {
+                self.hideWindow()
+            }
+
+            self.syncActivationPolicy()
+            self.setPresentationMode(presentationMode)
         }
         setPresentationMode(presentationMode)
     }
 
     func setPresentationMode(_ mode: PresentationMode) {
+        let previousWindow = currentWindow
+        let wasVisible = previousWindow.isVisible
+        let previousFrame = previousWindow.frame
+        previousWindow.orderOut(nil)
+
         switch mode {
         case .attached:
-            // Window mode change should be on off-screen window
-            managedWindow.orderOut(nil)
-            hostingView.safeAreaRegions = []
-            managedWindow.styleMask = [.titled, .fullSizeContentView, .closable, .resizable]
-            managedWindow.titleVisibility = .hidden
-            managedWindow.titlebarAppearsTransparent = true
-            managedWindow.isMovableByWindowBackground = false
-            managedWindow.level = .statusBar
-            managedWindow.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
-            managedWindow.standardWindowButton(.closeButton)?.isHidden = true
-            managedWindow.standardWindowButton(.miniaturizeButton)?.isHidden = true
-            managedWindow.standardWindowButton(.zoomButton)?.isHidden = true
-
+            currentWindow = attachedWindow
         case .pinned:
-            hostingView.safeAreaRegions = .all
-            managedWindow.styleMask = [.titled, .closable, .resizable]
-            managedWindow.titleVisibility = .visible
-            managedWindow.titlebarAppearsTransparent = false
-            managedWindow.isMovableByWindowBackground = false
-            managedWindow.level = .normal
-            managedWindow.collectionBehavior = [.moveToActiveSpace, .fullScreenNone]
-            managedWindow.standardWindowButton(.closeButton)?.isHidden = false
-            managedWindow.standardWindowButton(.miniaturizeButton)?.isHidden = false
-            managedWindow.standardWindowButton(.zoomButton)?.isHidden = false
+            currentWindow = pinnedWindow
         }
-        syncActivationPolicy()
+        installHostingView(in: currentWindow.contentView!)
+        currentWindow.setFrame(previousFrame, display: false)
+
+        if wasVisible {
+            NSApp.activate()
+            currentWindow.makeKeyAndOrderFront(nil)
+        }
     }
 
     private func showWindow() {
         if presentationMode == .attached {
-            repositionAttachedWindow()
+            attachedWindow.repositionWindow(relativeTo: statusItemStorage.button)
         }
-        managedWindow.makeKeyAndOrderFront(nil)
         presentationState.setWindowVisible(true)
-        NSApp.activate()
+        if presentationMode == .pinned {
+            NSApp.activate()
+        }
+        currentWindow.makeKeyAndOrderFront(nil)
         syncActivationPolicy()
     }
 
     private func hideWindow() {
-        managedWindow.orderOut(nil)
+        currentWindow.orderOut(nil)
         presentationState.setWindowVisible(false)
         syncActivationPolicy()
     }
 
     private func syncActivationPolicy() {
         let desiredActivationPolicy: NSApplication.ActivationPolicy =
-            presentationMode == .pinned && managedWindow.isVisible ? .regular : .accessory
+            presentationMode == .pinned && currentWindow.isVisible ? .regular : .accessory
 
         if NSApp.activationPolicy() != desiredActivationPolicy {
             NSApp.setActivationPolicy(desiredActivationPolicy)
         }
+    }
+
+    private func installHostingView(in containerView: NSView) {
+        hostingView.removeFromSuperview()
+        hostingView.frame = containerView.bounds
+        containerView.addSubview(hostingView)
     }
 
     private func configureStatusItemAction() {
@@ -152,21 +200,6 @@ final class MenuPresentationController<Content: View>: NSObject, NSWindowDelegat
         button.target = self
         button.action = #selector(handleStatusItemAction)
         button.sendAction(on: [.leftMouseDown, .rightMouseUp])
-    }
-
-    private func repositionAttachedWindow() {
-        guard let button = statusItemStorage.button, let buttonWindow = button.window else { return }
-
-        let buttonFrameInWindow = button.convert(button.bounds, to: nil)
-        let buttonFrameOnScreen = buttonWindow.convertToScreen(buttonFrameInWindow)
-        let visibleFrame = buttonWindow.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
-        let windowSize = managedWindow.frame.size
-
-        var originX = buttonFrameOnScreen.midX - (windowSize.width / 2)
-        originX = min(max(originX, visibleFrame.minX + 8), visibleFrame.maxX - windowSize.width - 8)
-
-        let originY = max(visibleFrame.minY + 8, buttonFrameOnScreen.minY - windowSize.height - 8)
-        managedWindow.setFrameOrigin(NSPoint(x: originX, y: originY))
     }
 
     @objc private func handleStatusItemAction() {
@@ -181,9 +214,9 @@ final class MenuPresentationController<Content: View>: NSObject, NSWindowDelegat
     }
 
     private func toggleFromStatusItem() {
-        if presentationMode == .pinned, !managedWindow.isKeyWindow {
+        if presentationMode == .pinned, !currentWindow.isKeyWindow {
             showWindow()
-        } else if managedWindow.isVisible {
+        } else if currentWindow.isVisible {
             hideWindow()
         } else {
             showWindow()
@@ -197,19 +230,18 @@ final class MenuPresentationController<Content: View>: NSObject, NSWindowDelegat
         _ = statusItemStorage.perform(selector, with: statusItemMenu)
     }
 
-    // Hide window on focus loss in attached mode
     func windowDidResignKey(_ notification: Notification) {
         if presentationMode == .attached {
             hideWindow()
         }
     }
 
-    // Prevent closing window when user hit cmd+w or click close button in pinned mode
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        if presentationMode == .pinned {
+        if sender === pinnedWindow {
             presentationState.setPresentationMode(.attached)
+        } else if sender === attachedWindow {
+            hideWindow()
         }
-        hideWindow()
         return false
     }
 }
