@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/homm/macmon-bindings.git",
       "state" : {
-        "branch" : "main",
-        "revision" : "15fb8d4737adfda8c5ee178e9981d67bbda213da"
+        "revision" : "bbcaabe1d31385f06f27f8a16181e13f4eb0fa3b",
+        "version" : "0.7.2"
       }
     }
   ],

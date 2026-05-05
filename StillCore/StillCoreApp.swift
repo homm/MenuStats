@@ -49,6 +49,7 @@ final class AppDependencies: ObservableObject {
     @Published var chipName: String?
     @Published var socSummary: String = ""
     @Published var metricsError: String = ""
+    private(set) var socInfo: SocInfo?
     private var metricsTask: Task<Void, Never>?
     private let metricsSubject = PassthroughSubject<Metrics, Never>()
 
@@ -110,9 +111,11 @@ final class AppDependencies: ObservableObject {
     private func loadSocInfo() {
         do {
             let info = try Macmon.socInfo()
+            socInfo = info
             chipName = info.chipName
             socSummary = formatSocSummary(info)
         } catch {
+            socInfo = nil
             chipName = nil
             socSummary = ""
         }
@@ -323,7 +326,7 @@ When usage is at 100%, the area reaches the line.
                     color: color,
                     kind: .line,
                     chartValue: { metrics in
-                        Double(metrics.cpu_usage[index].frequencyMHz) / 1000
+                        Double(cpuChartFrequencyMHz(metrics, index: index)) / 1000
                     },
                     detailsFormatter: Formatters.frequencyGHz,
                     detailsGroup: group
@@ -334,7 +337,7 @@ When usage is at 100%, the area reaches the line.
                     kind: .fill,
                     chartValue: { metrics in
                         Double(metrics.cpu_usage[index].usage)
-                            * Double(metrics.cpu_usage[index].frequencyMHz) / 1000
+                            * Double(cpuChartFrequencyMHz(metrics, index: index)) / 1000
                     },
                     detailsValue: { metrics in
                         Double(metrics.cpu_usage[index].usage)
@@ -360,7 +363,7 @@ When usage is at 100%, the area reaches the line.
                     color: color,
                     kind: .line,
                     chartValue: { metrics in
-                        Double(metrics.gpu_usage[index].frequencyMHz) / 1000
+                        Double(gpuChartFrequencyMHz(metrics, index: index)) / 1000
                     },
                     detailsFormatter: Formatters.frequencyGHz,
                     detailsGroup: group
@@ -371,7 +374,7 @@ When usage is at 100%, the area reaches the line.
                     kind: .fill,
                     chartValue: { metrics in
                         Double(metrics.gpu_usage[index].usage)
-                            * Double(metrics.gpu_usage[index].frequencyMHz) / 1000
+                            * Double(gpuChartFrequencyMHz(metrics, index: index)) / 1000
                     },
                     detailsValue: { metrics in
                         Double(metrics.gpu_usage[index].usage)
@@ -381,6 +384,24 @@ When usage is at 100%, the area reaches the line.
                 ),
             ]
         }
+    }
+
+    private static func cpuChartFrequencyMHz(_ metrics: Metrics, index: Int) -> UInt32 {
+        let frequency = metrics.cpu_usage[index].frequencyMHz
+        guard frequency == 0,
+            let domains = AppDependencies.shared.socInfo?.cpuDomains,
+            domains.indices.contains(index),
+            let minimumFrequency = domains[index].frequenciesMHz.first
+        else { return frequency }
+        return minimumFrequency
+    }
+
+    private static func gpuChartFrequencyMHz(_ metrics: Metrics, index: Int) -> UInt32 {
+        let frequency = metrics.gpu_usage[index].frequencyMHz
+        guard frequency == 0,
+            let minimumFrequency = AppDependencies.shared.socInfo?.gpuFrequenciesMHz.first
+        else { return frequency }
+        return minimumFrequency
     }
 }
 
