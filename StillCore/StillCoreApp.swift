@@ -596,6 +596,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         .monospacedSystemFont(ofSize: 13, weight: .bold)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        let aboutItem = NSMenuItem(title: "About...", action: #selector(showAboutPanel), keyEquivalent: "")
+        aboutItem.target = self
+        statusItemMenu.addItem(aboutItem)
+
         let quitItem = NSMenuItem(title: "Quit", action: #selector(quitApplication), keyEquivalent: "")
         quitItem.target = self
         statusItemMenu.addItem(quitItem)
@@ -826,8 +830,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         return descriptors
     }
+
+    @objc private func showAboutPanel() {
+        NSApp.activate()
+        AboutPanel.show()
+    }
+
     @objc private func quitApplication() {
         NSApp.terminate(nil)
+    }
+}
+
+@MainActor
+private enum AboutPanel {
+    static func show() {
+        NSApp.orderFrontStandardAboutPanel(options: [
+            .credits: credits(),
+        ])
+    }
+
+    private static func credits() -> NSAttributedString {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .center
+
+        let credits = NSMutableAttributedString(try! AttributedString(
+            markdown: """
+[Source code](https://github.com/homm/StillCore)
+
+Metrics core by [macmon](https://github.com/vladkens/macmon)
+
+Special thanks to
+Alyosha Gusev
+""",
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        ))
+        credits.addAttribute(
+            .paragraphStyle,
+            value: paragraphStyle,
+            range: NSRange(location: 0, length: credits.length)
+        )
+        return credits
     }
 }
 
@@ -838,6 +880,14 @@ struct MainApp: App {
     var body: some Scene {
         Settings {
             EmptyView()
+        }
+        .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About StillCore") {
+                    AboutPanel.show()
+                }
+            }
+            CommandGroup(replacing: .appSettings) {}
         }
     }
 }

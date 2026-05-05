@@ -632,9 +632,7 @@ private struct ChartHelpPopover: View {
         do {
             return try AttributedString(
                 markdown: markdown,
-                options: AttributedString.MarkdownParsingOptions(
-                    interpretedSyntax: .inlineOnlyPreservingWhitespace
-                )
+                options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
             )
         } catch {
             return AttributedString(markdown)

@@ -43,6 +43,7 @@ private final class AttachedWindow: NSPanel {
         isReleasedWhenClosed = false
         level = .mainMenu
         collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        tabbingMode = .disallowed
 
         titleVisibility = .hidden
         titlebarAppearsTransparent = true
@@ -84,6 +85,7 @@ private final class PinnedWindow: NSWindow {
         contentView = NSView()
         isReleasedWhenClosed = false
         collectionBehavior = [.moveToActiveSpace, .fullScreenNone]
+        tabbingMode = .disallowed
     }
 }
 
