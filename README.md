@@ -13,7 +13,7 @@ Main features:
 - Battery session tracking, such as 15% used over 2 hours since the last charge.
 
 <p align="right">
-    <img src="static/app.png" alt="StillCore app screenshot" width="640">
+    <img src="docs/app.png" alt="StillCore app screenshot" width="640">
 </p>
 
 StillCore is for everyday monitoring rather than deep profiling. It is built on top of [macmon](https://github.com/vladkens/macmon), which provides the core Apple Silicon metrics.
