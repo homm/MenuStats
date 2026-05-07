@@ -436,7 +436,7 @@ private struct MetricsDGChartView: NSViewRepresentable {
         chartView.minOffset = 0
         chartView.extraTopOffset = 8
         chartView.extraBottomOffset = 4
-        chartView.extraRightOffset = 40
+        chartView.extraRightOffset = 42
         chartView.clearHighlight = { highlightedSampleX = nil }
         chartView.delegate = context.coordinator
 
@@ -516,7 +516,7 @@ private struct MetricsDGChartView: NSViewRepresentable {
         legend.xEntrySpace = 10
         legend.xOffset = 0
         legend.yOffset = -1
-        legend.font = .systemFont(ofSize: 12)
+        legend.font = .systemFont(ofSize: 12, weight: .medium, width: NSFont.Width(-0.1))
         legend.textColor = NSColor(Color.secondary)
         let legendSeries = controller.series.filter { $0.kind == .line }
         legend.setCustom(entries: (legendSeries.isEmpty ? controller.series : legendSeries).map { descriptor in
@@ -618,8 +618,8 @@ struct MetricsChartSection: View {
             }
             Spacer()
             Text(definition.unitLabel)
-                .font(.system(size: 12, design: .monospaced))
-                .fontWeight(.bold)
+                .font(.system(size: 12, weight: .bold))
+                .fontWidth(Font.Width(-0.1))
                 .foregroundStyle(.secondary)
         }
     }

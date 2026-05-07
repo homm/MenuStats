@@ -40,6 +40,27 @@ enum FormatLocale {
     static let posix = Locale(identifier: "en_US_POSIX")
 }
 
+enum AppFonts {
+    static func tabularSystemFont(
+        ofSize fontSize: CGFloat,
+        weight: NSFont.Weight,
+        width: NSFont.Width = NSFont.Width(-0.1)
+    ) -> NSFont {
+        let baseFont = NSFont.systemFont(ofSize: fontSize, weight: weight, width: width)
+        let featureSettings: [[NSFontDescriptor.FeatureKey: Int]] = [
+            [
+                .typeIdentifier: kNumberSpacingType,
+                .selectorIdentifier: kMonospacedNumbersSelector,
+            ],
+        ]
+        let descriptor = baseFont.fontDescriptor.addingAttributes([
+            .featureSettings: featureSettings,
+        ])
+
+        return NSFont(descriptor: descriptor, size: fontSize) ?? baseFont
+    }
+}
+
 // MARK: - DI
 
 @MainActor
@@ -592,8 +613,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastMetrics: Metrics?
     private var statusItemDisplayDescriptors: [StatusItemDisplayDescriptor] = []
     private var selectedStatusItemDisplayPersistenceValue = AppSettings.statusItemDisplayMode ?? "icon"
-    private var statusItemFont = NSFont(name: "Menlo bold", size: 12) ??
-        .monospacedSystemFont(ofSize: 13, weight: .bold)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let aboutItem = NSMenuItem(title: "About...", action: #selector(showAboutPanel), keyEquivalent: "")
@@ -612,7 +631,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             configureStatusItem: { statusItem in
                 guard let button = statusItem.button else { return }
                 button.image = nil
-                button.font = self.statusItemFont
+                button.font = AppFonts.tabularSystemFont(ofSize: 12, weight: .semibold)
                 button.toolTip = AppPresentation.statusItemToolTip
                 self.applyStatusItemDisplay(metrics: nil, to: statusItem)
             },
@@ -709,11 +728,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func applyStatusItemTitle(_ title: String, to statusItem: NSStatusItem) {
         guard let button = statusItem.button else { return }
+        let leadingSpaces = title.prefix { $0 == " " }
+        let remainingTitle = title.dropFirst(leadingSpaces.count).replacingOccurrences(of: " ", with: "\u{2006}")
+        let displayTitle = String(repeating: "\u{2007}", count: leadingSpaces.count) + remainingTitle
         if button.image != nil {
             button.image = nil
         }
-        if button.title != title {
-            button.title = title
+        if button.title != displayTitle {
+            button.title = displayTitle
         }
     }
 

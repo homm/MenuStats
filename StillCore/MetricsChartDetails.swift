@@ -11,18 +11,17 @@ final class MetricsCurrentValuesRenderer: LineChartRenderer {
                 series: chartView.series
             )
         }
-        let attributedText = MetricsDetailsTextBuilder.buildDetailsText(
-            from: rows
-        )
+        let attributedText = MetricsDetailsTextBuilder.buildDetailsText(from: rows)
         drawLatestValues(context: context, attributedText: attributedText)
     }
 
     private func drawLatestValues(context: CGContext, attributedText: NSAttributedString) {
         guard attributedText.length > 0 else { return }
+        let overlap = 8.0
         let textRect = CGRect(
-            x: viewPortHandler.contentRight,
+            x: viewPortHandler.contentRight - overlap,
             y: viewPortHandler.contentTop,
-            width: 40,
+            width: 42 + overlap,
             height: CGFloat.greatestFiniteMagnitude
         )
         attributedText.draw(with: textRect, options: [.usesLineFragmentOrigin, .usesFontLeading])
@@ -90,10 +89,14 @@ enum MetricsDetailsBuilder {
 }
 
 enum MetricsDetailsTextBuilder {
-    private static var font: NSFont { NSFont.monospacedSystemFont(ofSize: 10, weight: .bold) }
     private static let rowSpacing: CGFloat = 4
 
-    static func buildDetailsText(from rows: [MetricsDetailsBuilder.Row]) -> NSAttributedString {
+    static func buildDetailsText(
+        from rows: [MetricsDetailsBuilder.Row],
+        fontSize: CGFloat = 12
+    ) -> NSAttributedString {
+        let font = AppFonts.tabularSystemFont(ofSize: fontSize, weight: .bold)
+        let percentFont = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .heavy)
         let text = NSMutableAttributedString()
 
         for (rowIndex, row) in rows.enumerated() {
@@ -110,16 +113,22 @@ enum MetricsDetailsTextBuilder {
                     paragraphStyle.paragraphSpacing = rowSpacing
                 }
 
-                text.append(
-                    NSAttributedString(
-                        string: item.text,
-                        attributes: [
-                            .font: font,
-                            .foregroundColor: item.color,
-                            .paragraphStyle: paragraphStyle,
-                        ]
-                    )
+                let lineText = item.text
+                let line = NSMutableAttributedString(
+                    string: lineText,
+                    attributes: [
+                        .font: font,
+                        .foregroundColor: item.color,
+                        .paragraphStyle: paragraphStyle,
+                    ]
                 )
+                let nsLineText = lineText as NSString
+                if nsLineText.hasSuffix("%") {
+                    let percentRange = NSRange(location: nsLineText.length - 1, length: 1)
+                    line.addAttribute(.font, value: percentFont, range: percentRange)
+                }
+
+                text.append(line)
             }
         }
 
@@ -212,6 +221,6 @@ final class MetricsDetailsMarkerView: FormattedTextMarkerView {
             from: chartView.getMaterializedPointsSlice(x: entry.x),
             series: chartView.series
         )
-        attributedText = MetricsDetailsTextBuilder.buildDetailsText(from: rows)
+        attributedText = MetricsDetailsTextBuilder.buildDetailsText(from: rows, fontSize: 10)
     }
 }
