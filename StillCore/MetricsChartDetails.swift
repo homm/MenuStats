@@ -70,9 +70,9 @@ enum MetricsDetailsBuilder {
 
             let itemColor: NSColor = switch descriptor.kind {
             case .line:
-                NSColor(descriptor.color)
+                descriptor.color
             case .fill:
-                .secondaryLabelColor
+                descriptor.color.withAlphaComponent(0.6)
             }
 
             currentItems.append(

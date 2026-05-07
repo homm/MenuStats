@@ -11,7 +11,7 @@ struct MetricsSeriesDescriptor {
     }
 
     let title: String
-    let color: Color
+    let color: NSColor
     let kind: Kind
     var lineWidth = 1.0
     let chartValue: (Metrics) -> Double
@@ -113,13 +113,13 @@ final class ChartDataController {
                 dataSet.drawFilledEnabled = false
                 dataSet.lineWidth = descriptor.lineWidth
                 dataSet.circleRadius = descriptor.lineWidth
-                dataSet.setColor(NSColor(descriptor.color))
-                dataSet.setCircleColor(NSColor(descriptor.color))
+                dataSet.setColor(descriptor.color)
+                dataSet.setCircleColor(descriptor.color)
             case .fill:
                 dataSet.highlightEnabled = false
                 dataSet.lineWidth = 0
                 dataSet.drawFilledEnabled = true
-                dataSet.fillColor = NSColor(descriptor.color)
+                dataSet.fillColor = descriptor.color
                 dataSet.fillAlpha = 1.0
             }
 
@@ -521,7 +521,7 @@ private struct MetricsDGChartView: NSViewRepresentable {
         let legendSeries = controller.series.filter { $0.kind == .line }
         legend.setCustom(entries: (legendSeries.isEmpty ? controller.series : legendSeries).map { descriptor in
             let entry = LegendEntry(label: descriptor.title)
-            entry.formColor = NSColor(descriptor.color)
+            entry.formColor = descriptor.color
             return entry
         })
     }

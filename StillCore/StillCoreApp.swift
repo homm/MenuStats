@@ -189,23 +189,38 @@ final class AppDependencies: ObservableObject {
 }
 
 private enum MetricsChartPalette {
-    static let board = Color(red: 0.12, green: 0.8, blue: 0.2)
-    static let package = Color(red: 0.13, green: 0.48, blue: 0.97)
-    static let cpu = Color(red: 0.32, green: 0.74, blue: 0.98)
-    static let gpu = Color(red: 1, green: 0.22, blue: 0.02)
-    static let ane = Color(red: 0.98, green: 0.58, blue: 0.02)
+    static let board = color(light: (0.06, 0.736, 0.14), dark: (0.18, 0.92, 0.28))
+    static let package = color(light: (0.058, 0.406, 0.892), dark: (0.13, 0.48, 0.97))
+    static let cpu = color(light: (0.246, 0.663, 0.902), dark: (0.32, 0.74, 0.98))
+    static let gpu = color(light: (0.92, 0.188, 0.0), dark: (1.0, 0.30, 0.10))
+    static let ane = color(light: (0.94, 0.62, 0.0), dark: (1.0, 0.66, 0.08))
 
-    static let cpuFrequencyPalette: [Color] = [
+    static let cpuFrequencyPalette: [NSColor] = [
         board, package, cpu,
-        Color(red: 0.18, green: 0.60, blue: 0.84),
-        Color(red: 0.10, green: 0.42, blue: 0.70),
+        color(light: (0.117, 0.534, 0.773), dark: (0.26, 0.68, 0.92)),
+        color(light: (0.048, 0.366, 0.644), dark: (0.18, 0.52, 0.82)),
     ]
 
-    static let gpuFrequencyPalette: [Color] = [
+    static let gpuFrequencyPalette: [NSColor] = [
         gpu, ane,
-        Color(red: 0.92, green: 0.36, blue: 0.18),
-        Color(red: 0.86, green: 0.14, blue: 0.34),
+        color(light: (0.846, 0.29, 0.111), dark: (1.0, 0.44, 0.24)),
+        color(light: (0.791, 0.076, 0.275), dark: (0.98, 0.22, 0.44)),
     ]
+
+    private static func color(
+        light: (red: CGFloat, green: CGFloat, blue: CGFloat),
+        dark: (red: CGFloat, green: CGFloat, blue: CGFloat)
+    ) -> NSColor {
+        NSColor(name: nil) { appearance in
+            let components = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
+            return NSColor(
+                srgbRed: components.red,
+                green: components.green,
+                blue: components.blue,
+                alpha: 1
+            )
+        }
+    }
 }
 
 @MainActor
@@ -354,7 +369,7 @@ When usage is at 100%, the area reaches the line.
                 ),
                 MetricsSeriesDescriptor(
                     title: title,
-                    color: color.opacity(0.3),
+                    color: color.withAlphaComponent(0.3),
                     kind: .fill,
                     chartValue: { metrics in
                         Double(metrics.cpu_usage[index].usage)
@@ -391,7 +406,7 @@ When usage is at 100%, the area reaches the line.
                 ),
                 MetricsSeriesDescriptor(
                     title: title,
-                    color: color.opacity(0.3),
+                    color: color.withAlphaComponent(0.3),
                     kind: .fill,
                     chartValue: { metrics in
                         Double(metrics.gpu_usage[index].usage)
