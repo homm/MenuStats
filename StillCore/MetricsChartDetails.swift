@@ -2,6 +2,12 @@ import AppKit
 import DGCharts
 
 final class MetricsCurrentValuesRenderer: LineChartRenderer {
+    private var currentValuesHeight: CGFloat?
+
+    func resetCurrentValuesLayout() {
+        currentValuesHeight = nil
+    }
+
     override func drawExtras(context: CGContext) {
         super.drawExtras(context: context)
         guard let chartView = dataProvider as? MetricsLineChartView else { return }
@@ -18,10 +24,21 @@ final class MetricsCurrentValuesRenderer: LineChartRenderer {
     private func drawLatestValues(context: CGContext, attributedText: NSAttributedString) {
         guard attributedText.length > 0 else { return }
         let overlap = 8.0
+        let textWidth = 42 + overlap
+        let textHeight: CGFloat
+        if let currentValuesHeight {
+            textHeight = currentValuesHeight
+        } else {
+            textHeight = attributedText.boundingRect(
+                with: CGSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading]
+            ).height
+            currentValuesHeight = textHeight
+        }
         let textRect = CGRect(
             x: viewPortHandler.contentRight - overlap,
-            y: viewPortHandler.contentTop,
-            width: 42 + overlap,
+            y: viewPortHandler.contentBottom - textHeight,
+            width: textWidth,
             height: CGFloat.greatestFiniteMagnitude
         )
         attributedText.draw(with: textRect, options: [.usesLineFragmentOrigin, .usesFontLeading])

@@ -335,6 +335,10 @@ final class MetricsLineChartView: LineChartView {
         self.marker = marker
     }
 
+    func resetCurrentValuesLayout() {
+        (renderer as? MetricsCurrentValuesRenderer)?.resetCurrentValuesLayout()
+    }
+
     override func rightMouseDown(with event: NSEvent) {
         clearHighlight?()
     }
@@ -455,6 +459,7 @@ private struct MetricsDGChartView: NSViewRepresentable {
         if chartView.data !== controller.data {
             chartView.data = controller.data
             chartView.yMaxStabilizer.reset()
+            chartView.resetCurrentValuesLayout()
             chartView.series = controller.series
             configureLegend(chartView)
             configureAxes(chartView)
