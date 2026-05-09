@@ -166,24 +166,32 @@ final class AppDependencies: ObservableObject {
 
     func increaseMetricsInterval() {
         let current = metricsIntervalMs
-        let step =
-            current >= Self.largeIntervalThresholdMs
-            ? Self.largeIntervalStepMs : Self.intervalStepMs
+        let step = Self.intervalStep(for: current)
         metricsIntervalMs = min(
             ((metricsIntervalMs + step) / step) * step, Self.maxMetricsIntervalMs)
     }
 
     func decreaseMetricsInterval() {
-        let step =
-            metricsIntervalMs > Self.largeIntervalThresholdMs
-            ? Self.largeIntervalStepMs : Self.intervalStepMs
+        let step = Self.intervalStep(for: metricsIntervalMs - 1)
         metricsIntervalMs = max(
             (max(metricsIntervalMs - step, 0) + step - 1) / step * step, Self.minMetricsIntervalMs)
+    }
+
+    private static func intervalStep(for intervalMs: Int) -> Int {
+        if intervalMs >= largeIntervalThresholdMs {
+            return largeIntervalStepMs
+        }
+        if intervalMs >= mediumIntervalThresholdMs {
+            return mediumIntervalStepMs
+        }
+        return intervalStepMs
     }
 
     private static let minMetricsIntervalMs = 100
     private static let maxMetricsIntervalMs = 10_000
     private static let intervalStepMs = 250
+    private static let mediumIntervalStepMs = 500
+    private static let mediumIntervalThresholdMs = 2_000
     private static let largeIntervalStepMs = 1_000
     private static let largeIntervalThresholdMs = 5_000
 }
@@ -447,8 +455,6 @@ struct ContentView: View {
     @ObservedObject private var batteryTrackerService = BatteryTrackerService.shared
     @ObservedObject var presentationState: MenuPresentationState
     @State private var highlightedChartSampleX: Double?
-    @State private var showIntervalKeyboardHint = false
-    @State private var hasShownIntervalKeyboardHint = false
 
     var body: some View {
         VStack(spacing: 8) {
@@ -458,6 +464,34 @@ struct ContentView: View {
                 Text(dependencies.socSummary)
                     .foregroundStyle(.secondary)
                 Spacer()
+                Menu {
+                    Text("Update interval:")
+                    ForEach(Self.intervalMenuOptions, id: \.milliseconds) { option in
+                        Button(option.title) {
+                            dependencies.metricsIntervalMs = option.milliseconds
+                        }
+                    }
+                    Divider()
+                    Text("Keyboard shortcuts:")
+                    Button("More often") {
+                        dependencies.decreaseMetricsInterval()
+                    }
+                        .keyboardShortcut("-", modifiers: [])
+                    Button("Less often") {
+                        dependencies.increaseMetricsInterval()
+                    }
+                        .keyboardShortcut("=", modifiers: [])
+                } label: {
+                    (Text(Image(systemName: "clock.arrow.circlepath"))
+                    + Text(intervalLabel))
+                        .font(Font(AppFonts.tabularSystemFont(
+                            ofSize: NSFont.systemFontSize,
+                            weight: .regular
+                        )))
+                }
+                    .menuStyle(.button)
+                    .buttonStyle(.accessoryBar)
+                    .help("Update interval")
                 Toggle(
                     isOn: Binding(
                         get: { presentationState.mode == .pinned },
@@ -529,35 +563,6 @@ struct ContentView: View {
 
             Divider()
 
-            HStack(spacing: 4) {
-                Text("Interval:")
-                Text(intervalLabel)
-                HStack(spacing: 4) {
-                    Button("–") {
-                        dependencies.decreaseMetricsInterval()
-                    }
-                        .buttonStyle(.plain)
-                        .keyboardShortcut("-", modifiers: [])
-                        .simultaneousGesture(TapGesture().onEnded(showIntervalHint))
-                    Text("/")
-                        .foregroundStyle(.secondary)
-                    Button("+") {
-                        dependencies.increaseMetricsInterval()
-                    }
-                        .buttonStyle(.plain)
-                        .keyboardShortcut("=", modifiers: [])
-                        .simultaneousGesture(TapGesture().onEnded(showIntervalHint))
-                }
-                .popover(isPresented: $showIntervalKeyboardHint, arrowEdge: .top) {
-                    Text("Keyboard shortcuts: - and +")
-                        .font(.system(size: 12))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                }
-                Spacer()
-            }
-
-            Divider()
             VStack(alignment: .leading, spacing: 6) {
                 if let actionTitle = batteryTrackerService.actionTitle {
                     HStack(spacing: 8) {
@@ -592,24 +597,45 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var intervalLabel: String {
-        let interval = dependencies.metricsIntervalMs
-        if interval < 1_000 {
-            return "\(interval) ms"
-        }
-        return String(format: "%.2f s", locale: FormatLocale.posix, Double(interval) / 1000.0)
+    private var intervalLabel: AttributedString {
+        Self.intervalLabel(for: dependencies.metricsIntervalMs)
     }
 
-    private func showIntervalHint() {
-        guard !hasShownIntervalKeyboardHint else { return }
-
-        hasShownIntervalKeyboardHint = true
-        showIntervalKeyboardHint = true
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-            showIntervalKeyboardHint = false
+    private static func intervalLabel(for interval: Int) -> AttributedString {
+        let wholeSeconds = interval >= 1_000 ? "\(interval / 1_000)" : ""
+        let milliseconds = interval % 1_000
+        let fraction: String
+        switch milliseconds {
+        case 0:
+            fraction = ""
+        default:
+            let digits =
+                milliseconds % 100 == 0 ? milliseconds / 100
+                : milliseconds % 10 == 0 ? milliseconds / 10
+                : milliseconds
+            fraction = ".\(digits)"
         }
+
+        var label = AttributedString("\u{2009}\(wholeSeconds)")
+        var attributedFraction = AttributedString(fraction)
+        if !wholeSeconds.isEmpty {
+            attributedFraction.font = Font(AppFonts.tabularSystemFont(
+                ofSize: NSFont.systemFontSize - 3,
+                weight: .medium
+            ))
+        }
+        label += attributedFraction
+        label += AttributedString("s")
+        return label
     }
+
+    private static let intervalMenuOptions = [
+        (milliseconds: 250, title: "0.25\u{2006}seconds"),
+        (milliseconds: 500, title: "0.5\u{2006}s"),
+        (milliseconds: 1_000, title: "1\u{2006}s"),
+        (milliseconds: 2_000, title: "2\u{2006}s"),
+        (milliseconds: 5_000, title: "5\u{2006}s"),
+    ]
 }
 
 @MainActor
@@ -925,6 +951,17 @@ struct MainApp: App {
                 }
             }
             CommandGroup(replacing: .appSettings) {}
+            CommandGroup(after: .toolbar) {
+                Divider()
+                Button("Decrease Update Interval") {
+                    AppDependencies.shared.decreaseMetricsInterval()
+                }
+                    .keyboardShortcut("-", modifiers: [])
+                Button("Increase Update Interval") {
+                    AppDependencies.shared.increaseMetricsInterval()
+                }
+                    .keyboardShortcut("=", modifiers: [])
+            }
         }
     }
 }

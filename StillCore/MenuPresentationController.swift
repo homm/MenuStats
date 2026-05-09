@@ -161,6 +161,7 @@ final class MenuPresentationController<Content: View>: NSObject, NSWindowDelegat
         if wasVisible {
             NSApp.activate()
             currentWindow.makeKeyAndOrderFront(nil)
+            currentWindow.makeFirstResponder(nil)
         }
     }
 
@@ -173,6 +174,7 @@ final class MenuPresentationController<Content: View>: NSObject, NSWindowDelegat
             NSApp.activate()
         }
         currentWindow.makeKeyAndOrderFront(nil)
+        currentWindow.makeFirstResponder(nil)
         syncActivationPolicy()
     }
 
