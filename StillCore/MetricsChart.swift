@@ -488,7 +488,7 @@ private struct MetricsDGChartView: NSViewRepresentable {
         leftAxis.gridLineWidth = 0.2
         leftAxis.gridLineDashLengths = [3, 2]
         leftAxis.drawZeroLineEnabled = true
-        leftAxis.zeroLineWidth = 1
+        leftAxis.zeroLineWidth = 0.5
         leftAxis.zeroLineDashLengths = nil
     }
 

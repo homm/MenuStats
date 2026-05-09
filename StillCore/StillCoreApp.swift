@@ -507,10 +507,6 @@ struct ContentView: View {
                     .help(presentationState.mode == .floating ? "Attach to menu bar" : "Keep window open")
                 Button("⏼") { NSApp.terminate(nil) }
             }
-            .padding(.bottom, 4)
-
-            Divider()
-                .background(Color(nsColor: .textColor))
 
             if !dependencies.metricsError.isEmpty {
                 Text("Macmon error: \(dependencies.metricsError)")
@@ -519,13 +515,11 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
             } else {
-                let graphPadding: CGFloat = 8
                 let backgroundColor = Color(.textBackgroundColor)
-                    .padding(.horizontal, -12)
-                    .padding(.top, -graphPadding)
-                    .padding(.bottom, -graphPadding + 4)
+                    .padding(EdgeInsets(top: -8, leading: -12, bottom: -4, trailing: -12))
+                let chartSectionInsets = EdgeInsets(top: 8, leading: 0, bottom: 4, trailing: 0)
                 GeometryReader { metrics in
-                    VStack(spacing: graphPadding * 2 - 2) {
+                    VStack(spacing: 0) {
                         MetricsChartSection(
                             definition: MetricsChartDefinitions.power,
                             metricsPublisher: dependencies.metricsPublisher,
@@ -535,6 +529,7 @@ struct ContentView: View {
                         )
                             .frame(height: metrics.size.height * 0.35)
                             .background(backgroundColor)
+                            .padding(chartSectionInsets)
 
                         MetricsChartSection(
                             definition: MetricsChartDefinitions.frequency,
@@ -545,6 +540,7 @@ struct ContentView: View {
                         )
                             .frame(height: metrics.size.height * 0.35)
                             .background(backgroundColor)
+                            .padding(chartSectionInsets)
 
                         MetricsChartSection(
                             definition: MetricsChartDefinitions.temperature,
@@ -556,12 +552,10 @@ struct ContentView: View {
                             yStart: 30
                         )
                             .background(backgroundColor)
+                            .padding(chartSectionInsets)
                     }
-                        .padding(.bottom, -4)
                 }
             }
-
-            Divider()
 
             VStack(alignment: .leading, spacing: 6) {
                 if let actionTitle = batteryTrackerService.actionTitle {
