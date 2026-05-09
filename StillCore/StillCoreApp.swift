@@ -494,17 +494,17 @@ struct ContentView: View {
                     .help("Update interval")
                 Toggle(
                     isOn: Binding(
-                        get: { presentationState.mode == .pinned },
-                        set: { isPinned in
-                            presentationState.setPresentationMode(isPinned ? .pinned : .attached)
+                        get: { presentationState.mode == .attached },
+                        set: { isAttached in
+                            presentationState.setPresentationMode(isAttached ? .attached : .floating)
                         }
                     )
                 ) {
                     Image(systemName: "pin")
-                        .rotationEffect(presentationState.mode == .pinned ? .zero : .degrees(35))
+                        .rotationEffect(presentationState.mode == .attached ? .zero : .degrees(35))
                 }
                     .toggleStyle(.button)
-                    .help(presentationState.mode == .pinned ? "Attach to menu bar" : "Keep window open")
+                    .help(presentationState.mode == .floating ? "Attach to menu bar" : "Keep window open")
                 Button("⏼") { NSApp.terminate(nil) }
             }
             .padding(.bottom, 4)

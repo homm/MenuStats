@@ -3,7 +3,7 @@ import SwiftUI
 
 enum PresentationMode: Equatable {
     case attached
-    case pinned
+    case floating
 }
 
 @MainActor
@@ -152,7 +152,7 @@ final class MenuPresentationController<Content: View>: NSObject, NSWindowDelegat
         switch mode {
         case .attached:
             currentWindow = attachedWindow
-        case .pinned:
+        case .floating:
             currentWindow = pinnedWindow
         }
         installHostingView(in: currentWindow.contentView!)
@@ -170,7 +170,7 @@ final class MenuPresentationController<Content: View>: NSObject, NSWindowDelegat
             attachedWindow.repositionWindow(relativeTo: statusItemStorage.button)
         }
         presentationState.setWindowVisible(true)
-        if presentationMode == .pinned {
+        if presentationMode == .floating {
             NSApp.activate()
         }
         currentWindow.makeKeyAndOrderFront(nil)
@@ -186,7 +186,7 @@ final class MenuPresentationController<Content: View>: NSObject, NSWindowDelegat
 
     private func syncActivationPolicy() {
         let desiredActivationPolicy: NSApplication.ActivationPolicy =
-            presentationMode == .pinned && currentWindow.isVisible ? .regular : .accessory
+            presentationMode == .floating && currentWindow.isVisible ? .regular : .accessory
 
         if NSApp.activationPolicy() != desiredActivationPolicy {
             NSApp.setActivationPolicy(desiredActivationPolicy)
@@ -218,7 +218,7 @@ final class MenuPresentationController<Content: View>: NSObject, NSWindowDelegat
     }
 
     private func toggleFromStatusItem() {
-        if presentationMode == .pinned, !currentWindow.isKeyWindow {
+        if presentationMode == .floating, !currentWindow.isKeyWindow {
             showWindow()
         } else if currentWindow.isVisible {
             hideWindow()
