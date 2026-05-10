@@ -59,6 +59,23 @@ enum AppFonts {
 
         return NSFont(descriptor: descriptor, size: fontSize) ?? baseFont
     }
+    nonisolated(unsafe) static let statusItemButton = tabularSystemFont(
+        ofSize: 12, weight: .semibold)
+    nonisolated(unsafe) static let intervalMenuLabel = tabularSystemFont(
+        ofSize: NSFont.systemFontSize, weight: .regular)
+    nonisolated(unsafe) static let intervalFraction = tabularSystemFont(
+        ofSize: NSFont.systemFontSize - 3, weight: .medium)
+    nonisolated(unsafe) static let batteryPercent = tabularSystemFont(
+        ofSize: 12, weight: .medium)
+    static let helpIcon = Font.system(size: 13, weight: .semibold)
+    static let systemMessage = Font.system(size: 12, design: .monospaced)
+
+    nonisolated(unsafe) static let chartDetailsValue = tabularSystemFont(
+        ofSize: 12, weight: .bold)
+    nonisolated(unsafe) static let chartDetailsMarkerValue = tabularSystemFont(
+        ofSize: 10, weight: .bold)
+    nonisolated(unsafe) static let chartLegend = tabularSystemFont(
+        ofSize: 12, weight: .medium)
 }
 
 // MARK: - DI
@@ -484,10 +501,7 @@ struct ContentView: View {
                 } label: {
                     (Text(Image(systemName: "clock.arrow.circlepath"))
                     + Text(intervalLabel))
-                        .font(Font(AppFonts.tabularSystemFont(
-                            ofSize: NSFont.systemFontSize,
-                            weight: .regular
-                        )))
+                        .font(Font(AppFonts.intervalMenuLabel))
                 }
                     .menuStyle(.button)
                     .buttonStyle(.accessoryBar)
@@ -511,7 +525,7 @@ struct ContentView: View {
             if !dependencies.metricsError.isEmpty {
                 Text("Macmon error: \(dependencies.metricsError)")
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(AppFonts.systemMessage)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
             } else {
@@ -576,10 +590,7 @@ struct ContentView: View {
                                 .foregroundStyle(.secondary)
                             Text("\(currentPercent)%")
                                 .foregroundStyle(.secondary)
-                                .font(Font(AppFonts.tabularSystemFont(
-                                    ofSize: 12,
-                                    weight: .medium
-                                )))
+                                .font(Font(AppFonts.batteryPercent))
                         }
                     }
                     Text(batteryTrackerService.statusText)
@@ -622,10 +633,7 @@ struct ContentView: View {
         var label = AttributedString("\u{2009}\(wholeSeconds)")
         var attributedFraction = AttributedString(fraction)
         if !wholeSeconds.isEmpty {
-            attributedFraction.font = Font(AppFonts.tabularSystemFont(
-                ofSize: NSFont.systemFontSize - 3,
-                weight: .medium
-            ))
+            attributedFraction.font = Font(AppFonts.intervalFraction)
         }
         label += attributedFraction
         label += AttributedString("s")
@@ -704,7 +712,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             configureStatusItem: { statusItem in
                 guard let button = statusItem.button else { return }
                 button.image = nil
-                button.font = AppFonts.tabularSystemFont(ofSize: 12, weight: .semibold)
+                button.font = AppFonts.statusItemButton
                 button.toolTip = AppPresentation.statusItemToolTip
                 self.applyStatusItemDisplay(metrics: nil, to: statusItem)
             },

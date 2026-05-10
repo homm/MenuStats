@@ -521,7 +521,7 @@ private struct MetricsDGChartView: NSViewRepresentable {
         legend.xEntrySpace = 10
         legend.xOffset = 0
         legend.yOffset = -1
-        legend.font = .systemFont(ofSize: 12, weight: .medium, width: NSFont.Width(-0.1))
+        legend.font = AppFonts.chartLegend
         legend.textColor = NSColor(Color.secondary)
         let legendSeries = controller.series.filter { $0.kind == .line }
         legend.setCustom(entries: (legendSeries.isEmpty ? controller.series : legendSeries).map { descriptor in
@@ -585,7 +585,7 @@ struct MetricsChartSection: View {
                 VStack(alignment: .leading) {
                     Spacer().frame(height: 24)
                     Text("Waiting for metrics...")
-                        .font(.system(size: 12, design: .monospaced))
+                        .font(AppFonts.systemMessage)
                         .foregroundStyle(.secondary)
                     Spacer()
                 }
@@ -612,7 +612,7 @@ struct MetricsChartSection: View {
                         isHelpPresented.toggle()
                     } label: {
                         Image(systemName: "questionmark.circle")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(AppFonts.helpIcon)
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
@@ -623,8 +623,7 @@ struct MetricsChartSection: View {
             }
             Spacer()
             Text(definition.unitLabel)
-                .font(.system(size: 12, weight: .bold))
-                .fontWidth(Font.Width(-0.1))
+                .font(Font(AppFonts.chartDetailsValue))
                 .foregroundStyle(.secondary)
         }
     }

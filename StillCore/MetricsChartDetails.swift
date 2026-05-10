@@ -108,11 +108,22 @@ enum MetricsDetailsBuilder {
 enum MetricsDetailsTextBuilder {
     private static let rowSpacing: CGFloat = 4
 
+    private static func valueFont(for fontSize: CGFloat) -> NSFont {
+        switch fontSize {
+        case 12:
+            AppFonts.chartDetailsValue
+        case 10:
+            AppFonts.chartDetailsMarkerValue
+        default:
+            AppFonts.tabularSystemFont(ofSize: fontSize, weight: .bold)
+        }
+    }
+
     static func buildDetailsText(
         from rows: [MetricsDetailsBuilder.Row],
         fontSize: CGFloat = 12
     ) -> NSAttributedString {
-        let font = AppFonts.tabularSystemFont(ofSize: fontSize, weight: .bold)
+        let font = valueFont(for: fontSize)
         let percentFont = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .heavy)
         let text = NSMutableAttributedString()
 
