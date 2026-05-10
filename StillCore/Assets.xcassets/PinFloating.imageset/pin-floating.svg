@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 0 17 15" fill="none">
+  <path
+    d="M-0.5 3.5H15.5"
+    stroke="currentColor"
+    stroke-width="1.1"
+    stroke-linecap="round"
+  />
+  <rect
+    x="3.5"
+    y="5.5"
+    width="8"
+    height="7"
+    rx="2"
+    stroke="currentColor"
+    stroke-width="1.1"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

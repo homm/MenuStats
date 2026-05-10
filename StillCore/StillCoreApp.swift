@@ -506,20 +506,19 @@ struct ContentView: View {
                     .menuStyle(.button)
                     .buttonStyle(.accessoryBar)
                     .help("Update interval")
-                Toggle(
-                    isOn: Binding(
-                        get: { presentationState.mode == .attached },
-                        set: { isAttached in
-                            presentationState.setPresentationMode(isAttached ? .attached : .floating)
-                        }
-                    )
-                ) {
-                    Image(systemName: "pin")
-                        .rotationEffect(presentationState.mode == .attached ? .zero : .degrees(35))
+                Button {
+                    presentationState.setPresentationMode(
+                        presentationState.mode == .attached ? .floating : .attached)
+                } label: {
+                    Image(presentationState.mode == .attached ? "PinFloating" : "PinAttached")
+                        .resizable().frame(height: 15)
+                        .fixedSize().frame(width: 15, height: 15)
+                        .offset(y: -1)
                 }
-                    .toggleStyle(.button)
-                    .help(presentationState.mode == .floating ? "Attach to menu bar" : "Keep window open")
-                Button("⏼") { NSApp.terminate(nil) }
+                    .help(presentationState.mode == .floating ? "Attach to menu bar" : "Detach from menu bar")
+                Button { NSApp.terminate(nil) } label: {
+                    Image(systemName: "power")
+                }
             }
 
             if !dependencies.metricsError.isEmpty {
