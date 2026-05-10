@@ -28,6 +28,7 @@ final class BatteryTrackerService: ObservableObject {
         refreshRuntimeState()
         startPolling()
     }
+
     func installHelper() {
         do {
             try service.register()
@@ -105,21 +106,18 @@ final class BatteryTrackerService: ObservableObject {
             return "Helper not running"
         }
 
-        let currentPercent = runtimeState.lastComputedStatus?.currentPercent
-        guard let currentPercent else { return "" }
-        let chargeLine = "Charge: \(currentPercent)% remaining"
-
         if let computedStatus = runtimeState.lastComputedStatus, let session = runtimeState.session {
-            let sleepSuffix = session.sleepSeconds > 0
-                ? " + \(formatDuration(session.sleepSeconds)) sleep"
-                : ""
-            return """
-            \(chargeLine)
-            On battery: \(formatDuration(computedStatus.activeSeconds))\(sleepSuffix), \(computedStatus.usedPercent)% used
-            """
+            let activeDuration = formatDuration(computedStatus.activeSeconds)
+            let sleepSuffix: String
+            if session.sleepSeconds > 0 {
+                sleepSuffix = " + \(formatDuration(session.sleepSeconds)) sleep"
+            } else {
+                sleepSuffix = ""
+            }
+            return "Drained \(computedStatus.usedPercent)% over \(activeDuration)\(sleepSuffix)"
         }
 
-        return chargeLine
+        return ""
     }
 
     var actionTitle: String? {
@@ -181,15 +179,11 @@ final class BatteryTrackerService: ObservableObject {
         let clamped = max(0, seconds)
         let hours = clamped / 3600
         let minutes = (clamped % 3600) / 60
-        let remainingSeconds = clamped % 60
 
         if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, remainingSeconds)
+            return "\(hours)h \(minutes)m"
         }
-        if minutes > 0 || remainingSeconds > 0 {
-            return String(format: "%02d:%02d", minutes, remainingSeconds)
-        }
-        return "\(remainingSeconds)s"
+        return "\(minutes)m"
     }
 
 }

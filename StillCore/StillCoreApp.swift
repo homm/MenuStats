@@ -557,23 +557,33 @@ struct ContentView: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
                 if let actionTitle = batteryTrackerService.actionTitle {
-                    HStack(spacing: 8) {
-                        Text("Battery tracker:")
-                        if batteryTrackerService.installState != .requiresApproval {
-                            Text(batteryTrackerService.runtimeLabel)
+
+                    Text("Battery tracker:")
+                    if batteryTrackerService.installState != .requiresApproval {
+                        Text(batteryTrackerService.runtimeLabel)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button(actionTitle) {
+                        batteryTrackerService.performPrimaryAction()
+                    }
+                } else {
+                    if let currentPercent = batteryTrackerService.runtimeState?.lastComputedStatus?.currentPercent {
+                        HStack(spacing: 4) {
+                            BatteryIndicatorView(percent: currentPercent)
                                 .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Button(actionTitle) {
-                            batteryTrackerService.performPrimaryAction()
+                            Text("\(currentPercent)%")
+                                .foregroundStyle(.secondary)
+                                .font(Font(AppFonts.tabularSystemFont(
+                                    ofSize: 12,
+                                    weight: .medium
+                                )))
                         }
                     }
-                } else if !batteryTrackerService.statusText.isEmpty {
                     Text(batteryTrackerService.statusText)
                         .textSelection(.enabled)
-                        .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -581,7 +591,6 @@ struct ContentView: View {
                 if batteryTrackerService.actionTitle == nil && !batteryTrackerService.lastErrorMessage.isEmpty {
                     Text(batteryTrackerService.lastErrorMessage)
                         .textSelection(.enabled)
-                        .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -630,6 +639,35 @@ struct ContentView: View {
         (milliseconds: 2_000, title: "2\u{2006}s"),
         (milliseconds: 5_000, title: "5\u{2006}s"),
     ]
+}
+
+private struct BatteryIndicatorView: View {
+    let percent: Int
+    private let bodyWidth: CGFloat = 24
+    private let bodyHeight: CGFloat = 12
+    private let bodyInset: CGFloat = 2
+
+    var body: some View {
+        let clampedPercent = min(max(percent, 0), 100)
+        let fillWidth = max(bodyWidth - bodyInset * 2, 0) * CGFloat(clampedPercent) / 100
+
+        HStack(spacing: 1) {
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 3)
+                    .strokeBorder(style: StrokeStyle(lineWidth: 1))
+
+                RoundedRectangle(cornerRadius: 1.5)
+                    .frame(width: fillWidth)
+                    .padding(bodyInset)
+            }
+            .frame(width: bodyWidth, height: bodyHeight)
+
+            Circle()
+                .frame(width: 6, height: 6)
+                .frame(width: 2, height: 6, alignment: .trailing)
+                .clipped()
+        }
+    }
 }
 
 @MainActor
