@@ -12,9 +12,7 @@ Main features:
 - A menu bar popover that can be pinned as a regular window.
 - Battery session tracking, such as 15% used over 2 hours since the last charge.
 
-<p align="right">
-    <img src="docs/app.png" alt="StillCore app screenshot" width="640">
-</p>
+<img src="docs/app.png" alt="StillCore app screenshot" width="487">
 
 StillCore is for everyday monitoring rather than deep profiling. It is built on top of [macmon](https://github.com/vladkens/macmon), which provides the core Apple Silicon metrics.
 
@@ -39,6 +37,7 @@ During development, I paid attention to StillCore's own footprint. The table bel
 
 | App | Mode | 100ms update interval | 1 sec update interval |
 | --- | --- | --- | --- |
+| | | `CHIP`: `CPU` + `GPU` | `CHIP`: `CPU` + `GPU` |
 | **StillCore** | In tray<br>Interactive | `0.03`: `0.01` + `0.00`<br>`0.12`: `0.03` + `0.02` | `0.02`: `0.01` + `0.00`<br>`0.04`: `0.02` + `0.00` |
 | **Stats** 2.12.12 | In tray<br>Interactive | -<br>- | `0.04`: `0.01` + `0.00`<br>`0.06`: `0.02` + `0.00` |
 | **iStat Menus** 7.2 | In tray<br>Interactive | -<br>- | `0.02`: `0.00` + `0.00`<br>`0.03`: `0.01` + `0.00` |
