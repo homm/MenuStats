@@ -34,7 +34,6 @@ PRODUCTS_DIR = $(DERIVED_DATA)/Build/Products/$(CONFIGURATION)
 APP_PATH = $(PRODUCTS_DIR)/$(NAME).app
 APP_EXEC_PATH = $(APP_PATH)/Contents/MacOS/$(NAME)
 HELPER_LABEL = com.github.homm.StillCore.BatteryTracker
-HELPER_STATE_PATH = $(HOME)/Library/Application Support/com.github.homm.StillCore/battery-tracker-state.json
 PROFILE_TRACE ?= $(DERIVED_DATA)/$(NAME)-Time-Profiler.trace
 PROFILE_TEMPLATE ?= Time Profiler
 DMG_PATH = $(NAME).dmg
@@ -107,15 +106,7 @@ open-app: app
 
 .PHONY: helper-restart
 helper-restart: app
-	rm -f "$(HELPER_STATE_PATH)"
-	@echo "Restarting helper..."
-	@if launchctl print "gui/$$(id -u)/$(HELPER_LABEL)" >/dev/null 2>&1; then \
-		launchctl kickstart -k "gui/$$(id -u)/$(HELPER_LABEL)"; \
-		echo "Helper restarted."; \
-	else \
-		echo "Helper is not registered in launchd. Start it from the StillCore UI."; \
-		exit 1; \
-	fi
+	"$(APP_EXEC_PATH)" --helper-restart
 
 .PHONY: benchmarks
 benchmarks:

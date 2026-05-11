@@ -693,8 +693,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastMetrics: Metrics?
     private var statusItemDisplayDescriptors: [StatusItemDisplayDescriptor] = []
     private var selectedStatusItemDisplayPersistenceValue = AppSettings.statusItemDisplayMode ?? "icon"
+    private let restartHelperArgument = "--helper-restart"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if CommandLine.arguments.contains(restartHelperArgument) {
+            BatteryTrackerService.shared.restartHelper()
+            NSApp.terminate(nil)
+            return
+        }
+
         let aboutItem = NSMenuItem(title: "About...", action: #selector(showAboutPanel), keyEquivalent: "")
         aboutItem.target = self
         statusItemMenu.addItem(aboutItem)

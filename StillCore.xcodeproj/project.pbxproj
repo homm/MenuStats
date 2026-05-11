@@ -121,6 +121,7 @@
 				AF9513E32E59D8B900550A10 /* Resources */,
 				AFFC83242E59E0410095EE6D /* CopyFiles */,
 				AF2B000B2F00000100000001 /* Copy LaunchAgent */,
+				AF2B00112F00000100000001 /* Configure LaunchAgent */,
 			);
 			buildRules = (
 			);
@@ -213,6 +214,28 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		AF2B00112F00000100000001 /* Configure LaunchAgent */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Configure LaunchAgent";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\nplist=\"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Library/LaunchAgents/com.github.homm.StillCore.BatteryTracker.plist\"\nplutil -replace Label -string \"$BATTERY_TRACKER_LAUNCH_AGENT_LABEL\" \"$plist\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 
 /* Begin PBXSourcesBuildPhase section */
@@ -360,6 +383,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = NO;
+				BATTERY_TRACKER_LAUNCH_AGENT_LABEL = com.github.homm.StillCore.Debug.BatteryTracker;
 				CODE_SIGN_ENTITLEMENTS = StillCore/StillCore.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -380,7 +404,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.github.homm.StillCore;
+				PRODUCT_BUNDLE_IDENTIFIER = com.github.homm.StillCore.Debug;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
@@ -401,6 +425,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = NO;
+				BATTERY_TRACKER_LAUNCH_AGENT_LABEL = com.github.homm.StillCore.BatteryTracker;
 				CODE_SIGN_ENTITLEMENTS = StillCore/StillCore.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -441,11 +466,12 @@
 				ARCHS = arm64;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.github.homm.StillCore.BatteryTrackerHelper;
+				PRODUCT_BUNDLE_IDENTIFIER = com.github.homm.StillCore.Debug.BatteryTrackerHelper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 6.0;
 			};
@@ -457,6 +483,7 @@
 				ARCHS = arm64;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;

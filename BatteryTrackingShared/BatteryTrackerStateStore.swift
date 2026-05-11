@@ -30,6 +30,13 @@ struct BatteryTrackerStateStore {
         try data.write(to: fileURL, options: .atomic)
     }
 
+    func delete() throws {
+        guard fileManager.fileExists(atPath: fileURL.path) else {
+            return
+        }
+        try fileManager.removeItem(at: fileURL)
+    }
+
     static func defaultFileURL() -> URL {
         let applicationSupportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         return applicationSupportURL

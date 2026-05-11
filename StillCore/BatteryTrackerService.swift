@@ -13,6 +13,12 @@ enum BatteryTrackerInstallState: Equatable {
 final class BatteryTrackerService: ObservableObject {
     static let shared = BatteryTrackerService()
     private static let refreshInterval: TimeInterval = 5
+    private static var currentHelperVersion: String {
+        let infoDictionary = Bundle.main.infoDictionary
+        return (infoDictionary?["CFBundleShortVersionString"] as? String)
+            ?? (infoDictionary?["CFBundleVersion"] as? String)
+            ?? "1"
+    }
 
     @Published private(set) var installState: BatteryTrackerInstallState = .notInstalled
     @Published private(set) var runtimeState: BatteryTrackerState?
@@ -24,8 +30,8 @@ final class BatteryTrackerService: ObservableObject {
     private var pendingRefreshWorkItem: DispatchWorkItem?
 
     private init() {
-        refreshHelperStatus()
-        refreshRuntimeState()
+        refreshAll()
+        restartHelperIfVersionChanged()
         startPolling()
     }
 
@@ -38,6 +44,34 @@ final class BatteryTrackerService: ObservableObject {
         }
         refreshAll()
         scheduleFollowUpRefresh()
+    }
+
+    func restartHelper(removingState: Bool = false) {
+        do {
+            if service.status != .notRegistered && service.status != .notFound {
+                try service.unregister()
+            }
+            if removingState {
+                try store.delete()
+            }
+            try service.register()
+            lastErrorMessage = ""
+        } catch {
+            lastErrorMessage = "Restart failed: \(error.localizedDescription)"
+        }
+        refreshAll()
+        scheduleFollowUpRefresh()
+    }
+
+    func restartHelperIfVersionChanged() {
+        guard installState == .installed, let runtimeState else {
+            return
+        }
+        guard runtimeState.helperVersion != Self.currentHelperVersion else {
+            return
+        }
+
+        restartHelper()
     }
 
     func uninstallHelper() {
@@ -117,7 +151,7 @@ final class BatteryTrackerService: ObservableObject {
             return "Drained \(computedStatus.usedPercent)% over \(activeDuration)\(sleepSuffix)"
         }
 
-        return ""
+        return chargeStatusText(runtimeState.chargeStatus)
     }
 
     var actionTitle: String? {
@@ -138,7 +172,7 @@ final class BatteryTrackerService: ObservableObject {
         case .requiresApproval:
             openSystemSettings()
         case .installed:
-            installHelper()
+            restartHelper()
         }
     }
 
@@ -184,6 +218,19 @@ final class BatteryTrackerService: ObservableObject {
             return "\(hours)h \(minutes)m"
         }
         return "\(minutes)m"
+    }
+
+    private func chargeStatusText(_ status: BatteryChargeStatus) -> String {
+        switch status {
+        case .charging:
+            return "Charging"
+        case .onHold:
+            return "On Hold"
+        case .charged:
+            return "Charged"
+        case .discharging, .unknown:
+            return ""
+        }
     }
 
 }

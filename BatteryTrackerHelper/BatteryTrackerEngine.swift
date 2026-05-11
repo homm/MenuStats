@@ -16,6 +16,8 @@ private struct BatterySnapshot {
     var currentCapacityMah: Int
     var maxCapacityMah: Int
     var isOnACPower: Bool
+    var isCharging: Bool
+    var isFullyCharged: Bool
 
     var currentPercent: Int {
         guard maxCapacityMah > 0 else { return 0 }
@@ -24,6 +26,13 @@ private struct BatterySnapshot {
 
     var powerSource: BatteryPowerSource {
         isOnACPower ? .ac : .battery
+    }
+
+    var chargeStatus: BatteryChargeStatus {
+        guard isOnACPower else { return .discharging }
+        if isCharging { return .charging }
+        if isFullyCharged { return .charged }
+        return .onHold
     }
 }
 
@@ -44,24 +53,26 @@ struct BatteryTrackerEngine {
 
     func run() -> Never {
         while true {
-            let cycleStartedAt = Date()
+            autoreleasepool {
+                let cycleStartedAt = Date()
 
-            do {
-                var state = try store.load() ?? makeState(now: cycleStartedAt)
-                let snapshot = try readBatterySnapshot()
-                state = update(state: state, snapshot: snapshot, now: cycleStartedAt)
-                try store.save(state)
-            } catch {
                 do {
-                    try store.save(makeErrorState(message: error.localizedDescription, now: cycleStartedAt))
+                    var state = try store.load() ?? makeState(now: cycleStartedAt)
+                    let snapshot = try readBatterySnapshot()
+                    state = update(state: state, snapshot: snapshot, now: cycleStartedAt)
+                    try store.save(state)
                 } catch {
-                    FileHandle.standardError.write(Data("\(error.localizedDescription)\n".utf8))
+                    do {
+                        try store.save(makeErrorState(message: error.localizedDescription, now: cycleStartedAt))
+                    } catch {
+                        FileHandle.standardError.write(Data("\(error.localizedDescription)\n".utf8))
+                    }
                 }
-            }
 
-            let elapsed = Date().timeIntervalSince(cycleStartedAt)
-            let sleepDuration = max(1, Int((Self.pollInterval - elapsed).rounded(.up)))
-            sleep(UInt32(sleepDuration))
+                let elapsed = Date().timeIntervalSince(cycleStartedAt)
+                let sleepDuration = max(1, Int((Self.pollInterval - elapsed).rounded(.up)))
+                sleep(UInt32(sleepDuration))
+            }
         }
     }
 
@@ -107,6 +118,7 @@ struct BatteryTrackerEngine {
         nextState.pid = getpid()
         nextState.heartbeatAt = now
         nextState.powerSource = snapshot.powerSource
+        nextState.chargeStatus = snapshot.chargeStatus
         nextState.session = session
         nextState.lastComputedStatus = computedStatus
         nextState.lastError = nil
@@ -138,6 +150,7 @@ struct BatteryTrackerEngine {
             pid: getpid(),
             heartbeatAt: now,
             powerSource: .unknown,
+            chargeStatus: .unknown,
             session: nil,
             lastComputedStatus: nil,
             lastError: nil
@@ -150,6 +163,7 @@ struct BatteryTrackerEngine {
             pid: getpid(),
             heartbeatAt: now,
             powerSource: .unknown,
+            chargeStatus: .unknown,
             session: nil,
             lastComputedStatus: nil,
             lastError: message
@@ -168,7 +182,9 @@ struct BatteryTrackerEngine {
                 ?? intProperty(entry: entry, key: "CurrentCapacity"),
             let maxCapacity = intProperty(entry: entry, key: "AppleRawMaxCapacity")
                 ?? intProperty(entry: entry, key: "MaxCapacity"),
-            let isOnACPower = boolProperty(entry: entry, key: "ExternalConnected")
+            let isOnACPower = boolProperty(entry: entry, key: "ExternalConnected"),
+            let isCharging = boolProperty(entry: entry, key: "IsCharging"),
+            let isFullyCharged = boolProperty(entry: entry, key: "FullyCharged")
         else {
             throw BatteryTrackerEngineError.unavailable
         }
@@ -176,7 +192,9 @@ struct BatteryTrackerEngine {
         return BatterySnapshot(
             currentCapacityMah: currentCapacity,
             maxCapacityMah: maxCapacity,
-            isOnACPower: isOnACPower
+            isOnACPower: isOnACPower,
+            isCharging: isCharging,
+            isFullyCharged: isFullyCharged
         )
     }
 
