@@ -270,7 +270,7 @@ private enum MetricsChartDefinitions {
 
     static let power = MetricsChartDefinition(
         title: "Power",
-        unitLabel: "WATT",
+        unitLabel: "Watt",
         helpMarkdown:
 """
 **Power draw by components**
@@ -350,7 +350,7 @@ private enum MetricsChartDefinitions {
 
     static let frequency = MetricsChartDefinition(
         title: "Frequency, usage",
-        unitLabel: "GHz",
+        unitLabel: "GHz, %",
         helpMarkdown:
 """
 Current frequency and usage of all CPU and GPU clusters.

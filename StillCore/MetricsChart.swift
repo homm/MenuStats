@@ -440,7 +440,7 @@ private struct MetricsDGChartView: NSViewRepresentable {
         chartView.minOffset = 0
         chartView.extraTopOffset = 8
         chartView.extraBottomOffset = 4
-        chartView.extraRightOffset = 42
+        chartView.extraRightOffset = MetricsCurrentValuesLayout.rightOffset
         chartView.clearHighlight = { highlightedSampleX = nil }
         chartView.delegate = context.coordinator
 
@@ -452,6 +452,16 @@ private struct MetricsDGChartView: NSViewRepresentable {
 
         let rightAxis = chartView.rightAxis
         rightAxis.enabled = false
+
+        // Compensate sloppy clipping
+        let legend = chartView.legend
+        legend.enabled = true
+        legend.horizontalAlignment = .right
+        legend.verticalAlignment = .top
+        legend.yOffset = -1
+        legend.font = AppFonts.chartLegend
+        legend.setCustom(entries: [LegendEntry(label: "")])
+
         return chartView
     }
 
@@ -461,7 +471,6 @@ private struct MetricsDGChartView: NSViewRepresentable {
             chartView.yMaxStabilizer.reset()
             chartView.resetCurrentValuesLayout()
             chartView.series = controller.series
-            configureLegend(chartView)
             configureAxes(chartView)
         }
 
@@ -509,27 +518,6 @@ private struct MetricsDGChartView: NSViewRepresentable {
             chartView.yMaxStabilizer.update(height: visibleHeight) + yStart
     }
 
-    private func configureLegend(_ chartView: LineChartView) {
-        let legend = chartView.legend
-        legend.enabled = true
-        legend.horizontalAlignment = .right
-        legend.verticalAlignment = .top
-        legend.orientation = .horizontal
-        legend.drawInside = false
-        legend.form = .circle
-        legend.formSize = 8
-        legend.xEntrySpace = 10
-        legend.xOffset = 0
-        legend.yOffset = -1
-        legend.font = AppFonts.chartLegend
-        legend.textColor = NSColor(Color.secondary)
-        let legendSeries = controller.series.filter { $0.kind == .line }
-        legend.setCustom(entries: (legendSeries.isEmpty ? controller.series : legendSeries).map { descriptor in
-            let entry = LegendEntry(label: descriptor.title)
-            entry.formColor = descriptor.color
-            return entry
-        })
-    }
 }
 
 struct MetricsChartSection: View {
@@ -603,10 +591,14 @@ struct MetricsChartSection: View {
     }
 
     private func headerView() -> some View {
-        HStack(alignment: .bottom) {
-            HStack(alignment: .center, spacing: 4) {
-                Text(definition.title)
-                    .font(.headline)
+        HStack(alignment: .lastTextBaseline, spacing: MetricsCurrentValuesLayout.columnSpacing) {
+            Spacer()
+            Text(definition.title)
+                .font(.headline)
+            Text(definition.unitLabel)
+                .foregroundStyle(.secondary)
+                .padding(.leading, MetricsCurrentValuesLayout.columnSpacing)
+            HStack {
                 if let helpMarkdown = definition.helpMarkdown {
                     Button {
                         isHelpPresented.toggle()
@@ -616,15 +608,12 @@ struct MetricsChartSection: View {
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
-                    .popover(isPresented: $isHelpPresented, arrowEdge: .bottom) {
+                    .popover(isPresented: $isHelpPresented, arrowEdge: .trailing) {
                         ChartHelpPopover(markdown: helpMarkdown)
                     }
                 }
             }
-            Spacer()
-            Text(definition.unitLabel)
-                .font(Font(AppFonts.chartDetailsValue))
-                .foregroundStyle(.secondary)
+                .frame(width: MetricsCurrentValuesLayout.labelsColumnWidth, alignment: .leading)
         }
     }
 }

@@ -1,6 +1,16 @@
 import AppKit
 import DGCharts
 
+enum MetricsCurrentValuesLayout {
+    static let valuesColumnWidth: CGFloat = 42
+    static let labelsColumnWidth: CGFloat = 28
+    static let columnSpacing: CGFloat = 4
+
+    static var rightOffset: CGFloat {
+        valuesColumnWidth + columnSpacing + labelsColumnWidth
+    }
+}
+
 final class MetricsCurrentValuesRenderer: LineChartRenderer {
     private var currentValuesHeight: CGFloat?
 
@@ -17,31 +27,45 @@ final class MetricsCurrentValuesRenderer: LineChartRenderer {
                 series: chartView.series
             )
         }
-        let attributedText = MetricsDetailsTextBuilder.buildDetailsText(from: rows)
-        drawLatestValues(context: context, attributedText: attributedText)
+        let valuesText = MetricsDetailsTextBuilder.buildValuesText(from: rows)
+        let labelsText = MetricsDetailsTextBuilder.buildLabelsText(from: rows)
+        drawLatestValues(context: context, valuesText: valuesText, labelsText: labelsText)
     }
 
-    private func drawLatestValues(context: CGContext, attributedText: NSAttributedString) {
-        guard attributedText.length > 0 else { return }
-        let overlap = 8.0
-        let textWidth = 42 + overlap
+    private func drawLatestValues(
+        context: CGContext,
+        valuesText: NSAttributedString,
+        labelsText: NSAttributedString
+    ) {
+        guard valuesText.length > 0 else { return }
+        let overlap: CGFloat = 4
         let textHeight: CGFloat
         if let currentValuesHeight {
             textHeight = currentValuesHeight
         } else {
-            textHeight = attributedText.boundingRect(
-                with: CGSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude),
+            textHeight = valuesText.boundingRect(
+                with: CGSize(
+                    width: MetricsCurrentValuesLayout.valuesColumnWidth + overlap,
+                    height: CGFloat.greatestFiniteMagnitude
+                ),
                 options: [.usesLineFragmentOrigin, .usesFontLeading]
             ).height
             currentValuesHeight = textHeight
         }
-        let textRect = CGRect(
+        let valuesRect = CGRect(
             x: viewPortHandler.contentRight - overlap,
             y: viewPortHandler.contentBottom - textHeight,
-            width: textWidth,
+            width: MetricsCurrentValuesLayout.valuesColumnWidth + overlap,
             height: CGFloat.greatestFiniteMagnitude
         )
-        attributedText.draw(with: textRect, options: [.usesLineFragmentOrigin, .usesFontLeading])
+        let labelsRect = CGRect(
+            x: valuesRect.maxX + MetricsCurrentValuesLayout.columnSpacing,
+            y: valuesRect.minY,
+            width: CGFloat.greatestFiniteMagnitude,
+            height: valuesRect.height
+        )
+        valuesText.draw(with: valuesRect, options: [.usesLineFragmentOrigin, .usesFontLeading])
+        labelsText.draw(with: labelsRect, options: [.usesLineFragmentOrigin, .usesFontLeading])
     }
 }
 
@@ -50,6 +74,7 @@ enum MetricsDetailsBuilder {
         struct Item {
             let text: String
             let color: NSColor
+            let label: String?
         }
 
         let items: [Item]
@@ -95,7 +120,8 @@ enum MetricsDetailsBuilder {
             currentItems.append(
                 .init(
                     text: descriptor.detailsFormatter(point.detailsValue),
-                    color: itemColor
+                    color: itemColor,
+                    label: currentItems.isEmpty ? descriptor.title : nil
                 )
             )
         }
@@ -119,7 +145,36 @@ enum MetricsDetailsTextBuilder {
         }
     }
 
-    static func buildDetailsText(
+    static func buildLabelsText(from rows: [MetricsDetailsBuilder.Row]) -> NSAttributedString {
+        let text = NSMutableAttributedString()
+
+        for (rowIndex, row) in rows.enumerated() {
+            for (itemIndex, item) in row.items.enumerated() {
+                let paragraphStyle = NSMutableParagraphStyle()
+                paragraphStyle.alignment = .left
+
+                if itemIndex == row.items.indices.last,
+                   rowIndex < rows.indices.last ?? 0 {
+                    paragraphStyle.paragraphSpacing = rowSpacing
+                }
+
+                let attributes: [NSAttributedString.Key: Any] = [
+                    .font: AppFonts.chartLegend,
+                    .foregroundColor: item.color,
+                    .paragraphStyle: paragraphStyle,
+                ]
+                text.append(NSAttributedString(string: item.label ?? " ", attributes: attributes))
+
+                if itemIndex != row.items.indices.last || rowIndex < rows.indices.last ?? 0 {
+                    text.append(NSAttributedString(string: "\n", attributes: attributes))
+                }
+            }
+        }
+
+        return text
+    }
+
+    static func buildValuesText(
         from rows: [MetricsDetailsBuilder.Row],
         fontSize: CGFloat = 12
     ) -> NSAttributedString {
@@ -249,6 +304,6 @@ final class MetricsDetailsMarkerView: FormattedTextMarkerView {
             from: chartView.getMaterializedPointsSlice(x: entry.x),
             series: chartView.series
         )
-        attributedText = MetricsDetailsTextBuilder.buildDetailsText(from: rows, fontSize: 10)
+        attributedText = MetricsDetailsTextBuilder.buildValuesText(from: rows, fontSize: 10)
     }
 }
