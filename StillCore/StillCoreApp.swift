@@ -208,9 +208,9 @@ final class AppDependencies: ObservableObject {
     private static let maxMetricsIntervalMs = 10_000
     private static let intervalStepMs = 250
     private static let mediumIntervalStepMs = 500
-    private static let mediumIntervalThresholdMs = 2_000
+    private static let mediumIntervalThresholdMs = 1_000
     private static let largeIntervalStepMs = 1_000
-    private static let largeIntervalThresholdMs = 5_000
+    private static let largeIntervalThresholdMs = 3_000
 }
 
 private enum MetricsChartPalette {
