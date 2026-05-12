@@ -279,6 +279,7 @@ private enum MetricsChartDefinitions {
 • `CHIP` is the power reported for the whole SoC, including all compute units and memory.
 • `CPU`, `GPU`, and `ANE` are individual parts of `CHIP`.
 """,
+        showsSampleTime: true,
         schemaBuilder: { _ in "power" },
         seriesBuilder: { _ in
             [

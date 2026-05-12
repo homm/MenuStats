@@ -293,6 +293,33 @@ class FormattedTextMarkerView: MarkerView {
 }
 
 final class MetricsDetailsMarkerView: FormattedTextMarkerView {
+    var showsSampleTime = false
+
+    private static let relativeDateFormatter: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .abbreviated
+        formatter.allowedUnits = [.minute, .second]
+        formatter.maximumUnitCount = 2
+        formatter.zeroFormattingBehavior = [.dropLeading]
+        return formatter
+    }()
+
+    private func buildTimeText(from sampleDate: Date) -> NSAttributedString {
+        let elapsed = max(0, Int(Date().timeIntervalSince(sampleDate)))
+        let timeText = Self.relativeDateFormatter.string(from: TimeInterval(elapsed)) ?? "\(elapsed)s"
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .right
+        paragraphStyle.paragraphSpacing = 4
+        return NSAttributedString(
+            string: "-\(timeText)\n",
+            attributes: [
+                .font: AppFonts.chartLegend,
+                .foregroundColor: NSColor.secondaryLabelColor,
+                .paragraphStyle: paragraphStyle,
+            ]
+        )
+    }
+
     @MainActor
     override func refreshContent(entry: ChartDataEntry, highlight: Highlight) {
         guard let chartView = chartView as? MetricsLineChartView else {
@@ -300,10 +327,19 @@ final class MetricsDetailsMarkerView: FormattedTextMarkerView {
             return
         }
 
+        let points = chartView.getMaterializedPointsSlice(x: entry.x)
         let rows = MetricsDetailsBuilder.buildRows(
-            from: chartView.getMaterializedPointsSlice(x: entry.x),
+            from: points,
             series: chartView.series
         )
-        attributedText = MetricsDetailsTextBuilder.buildValuesText(from: rows, fontSize: 10)
+        let text = NSMutableAttributedString()
+
+        if showsSampleTime,
+           let sampleDate = (entry.data as? MaterializedChartPoint)?.sampleDate ?? points.first?.sampleDate {
+            text.append(buildTimeText(from: sampleDate))
+        }
+
+        text.append(MetricsDetailsTextBuilder.buildValuesText(from: rows, fontSize: 10))
+        attributedText = text
     }
 }

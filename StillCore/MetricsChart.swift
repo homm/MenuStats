@@ -26,6 +26,7 @@ struct MetricsChartDefinition {
     let title: String
     let unitLabel: String
     let helpMarkdown: String?
+    var showsSampleTime = false
     let schemaBuilder: (Metrics?) -> AnyHashable
     let seriesBuilder: (Metrics?) -> [MetricsSeriesDescriptor]
 }
@@ -38,12 +39,14 @@ private struct MaterializedMetricsSample {
     }
 
     let sampleID: Int
+    let sampleDate: Date
     let values: [SeriesValue]
 }
 
 struct MaterializedChartPoint {
     let descriptorIndex: Int
     let detailsValue: Double
+    let sampleDate: Date
 }
 
 @MainActor
@@ -77,6 +80,7 @@ final class ChartDataController {
 
         let sample = MaterializedMetricsSample(
             sampleID: appendedCount,
+            sampleDate: Date(),
             values: series.map { descriptor in
                 let chartValue = descriptor.chartValue(metrics)
                 return .init(
@@ -156,7 +160,8 @@ final class ChartDataController {
                     y: sample.values[index].chartValue,
                     data: MaterializedChartPoint(
                         descriptorIndex: index,
-                        detailsValue: sample.values[index].detailsValue
+                        detailsValue: sample.values[index].detailsValue,
+                        sampleDate: sample.sampleDate
                     )
                 )
             )
@@ -399,6 +404,7 @@ private struct MetricsDGChartView: NSViewRepresentable {
     let capacity: Int
     let yStart: Double
     let yAxisLabelCount: Int
+    let showsSampleTime: Bool
     @Binding var highlightedSampleX: Double?
 
     final class Coordinator: NSObject, ChartViewDelegate {
@@ -430,6 +436,7 @@ private struct MetricsDGChartView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> MetricsLineChartView {
         let chartView = MetricsLineChartView()
+        (chartView.marker as? MetricsDetailsMarkerView)?.showsSampleTime = showsSampleTime
         chartView.drawBordersEnabled = false
         chartView.drawGridBackgroundEnabled = false
         chartView.chartDescription.enabled = false
@@ -567,6 +574,7 @@ struct MetricsChartSection: View {
                     capacity: capacity,
                     yStart: yStart,
                     yAxisLabelCount: yAxisLabelCount,
+                    showsSampleTime: definition.showsSampleTime,
                     highlightedSampleX: $highlightedSampleX
                 )
             } else {
