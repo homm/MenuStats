@@ -82,7 +82,7 @@ private final class AttachedWindow: NSPanel {
     }
 }
 
-private final class PinnedWindow: NSWindow {
+private final class FloatingWindow: NSWindow {
     init() {
         super.init(
             contentRect: .zero,
@@ -107,7 +107,7 @@ final class MenuPresentationController<Content: View>: NSObject, NSWindowDelegat
     private let hostingView: NSHostingView<AnyView>
     private var currentWindow: NSWindow
     private let attachedWindow: AttachedWindow
-    private let pinnedWindow: PinnedWindow
+    private let floatingWindow: FloatingWindow
 
     var statusItem: NSStatusItem { statusItemStorage }
     private var presentationMode: PresentationMode { presentationState.mode }
@@ -126,16 +126,16 @@ final class MenuPresentationController<Content: View>: NSObject, NSWindowDelegat
         self.statusItemMenu = statusItemMenu
 
         attachedWindow = AttachedWindow()
-        pinnedWindow = PinnedWindow()
+        floatingWindow = FloatingWindow()
         currentWindow = attachedWindow
 
         super.init()
 
         attachedWindow.delegate = self
-        pinnedWindow.delegate = self
+        floatingWindow.delegate = self
         configureStatusItem?(statusItemStorage)
         configureWindow?(attachedWindow)
-        configureWindow?(pinnedWindow)
+        configureWindow?(floatingWindow)
         configureStatusItemAction()
 
         presentationState.onModeChange = { [weak self] in
@@ -161,7 +161,7 @@ final class MenuPresentationController<Content: View>: NSObject, NSWindowDelegat
         case .attached:
             currentWindow = attachedWindow
         case .floating:
-            currentWindow = pinnedWindow
+            currentWindow = floatingWindow
         }
         installHostingView(in: currentWindow.contentView!)
         currentWindow.setFrame(previousFrame, display: false)
@@ -249,7 +249,7 @@ final class MenuPresentationController<Content: View>: NSObject, NSWindowDelegat
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        if sender === pinnedWindow {
+        if sender === floatingWindow {
             presentationState.setPresentationMode(.attached)
         } else if sender === attachedWindow {
             hideWindow()

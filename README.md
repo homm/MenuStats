@@ -9,7 +9,7 @@ Main features:
 - CPU and GPU frequency and usage on the combined chart.
 - Temperature charts.
 - Adjustable update interval from 100 ms to 10 seconds.
-- A menu bar popover that can be pinned as a regular window.
+- Quick menu bar access with an optional always-open window.
 - Battery session tracking, such as 15% used over 2 hours since the last charge.
 
 <img src="docs/app.png" alt="StillCore app screenshot" width="487">

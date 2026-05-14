@@ -32,7 +32,7 @@ enum AppPresentation {
     static let windowMinSize = CGSize(width: 420, height: 560)
     static let statusItemSystemImageName = "chart.bar.xaxis"
     static let statusItemToolTip = "StillCore"
-    static let pinnedWindowTitle = "StillCore"
+    static let floatingWindowTitle = "StillCore"
     static let chartHistoryCapacity = 180
 }
 
@@ -477,7 +477,7 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 8) {
             HStack {
-                Text(dependencies.chipName ?? AppPresentation.pinnedWindowTitle)
+                Text(dependencies.chipName ?? AppPresentation.floatingWindowTitle)
                     .font(.headline)
                 Text(dependencies.socSummary)
                     .foregroundStyle(.secondary)
@@ -724,7 +724,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.applyStatusItemDisplay(metrics: nil, to: statusItem)
             },
             configureWindow: { window in
-                window.title = AppPresentation.pinnedWindowTitle
+                window.title = AppPresentation.floatingWindowTitle
                 window.setContentSize(AppPresentation.windowMinSize)
                 window.minSize = AppPresentation.windowMinSize
             }
