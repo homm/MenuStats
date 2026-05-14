@@ -48,6 +48,14 @@ private final class AttachedWindow: NSPanel {
         titleVisibility = .hidden
         titlebarAppearsTransparent = true
         animationBehavior = .none
+
+        // Increase title dragging area
+        toolbar = NSToolbar(identifier: "AttachedWindowToolbar")
+        toolbar?.allowsUserCustomization = false
+        toolbar?.autosavesConfiguration = false
+        toolbarStyle = .unified
+        showsToolbarButton = false
+
         for buttonType in [
             NSWindow.ButtonType.closeButton, .miniaturizeButton,
             .zoomButton, .toolbarButton, .documentIconButton, .documentVersionsButton,
