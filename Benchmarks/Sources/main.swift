@@ -64,10 +64,14 @@ private final class OffscreenSurface: @unchecked Sendable {
             colorSpaceName: .deviceRGB,
             bytesPerRow: 0,
             bitsPerPixel: 0
-        ), let graphicsContext = NSGraphicsContext(bitmapImageRep: bitmap) else {
+        ), let bitmapGraphicsContext = NSGraphicsContext(bitmapImageRep: bitmap) else {
             return nil
         }
 
+        let graphicsContext = NSGraphicsContext(
+            cgContext: bitmapGraphicsContext.cgContext,
+            flipped: true
+        )
         let pointSize = CGSize(width: pixelSize.width / scale, height: pixelSize.height / scale)
         bitmap.size = pointSize
 
@@ -85,10 +89,33 @@ private final class OffscreenSurface: @unchecked Sendable {
         graphicsContext.cgContext.fill(pixelRect)
         graphicsContext.cgContext.saveGState()
         graphicsContext.cgContext.scaleBy(x: scale, y: scale)
+        graphicsContext.cgContext.translateBy(x: 0, y: rect.height)
+        graphicsContext.cgContext.scaleBy(x: 1, y: -1)
         text.draw(
             with: rect,
             options: [.usesLineFragmentOrigin, .usesFontLeading]
         )
+        graphicsContext.cgContext.restoreGState()
+        NSGraphicsContext.current = previousContext
+    }
+
+    func draw(lines: [(text: NSAttributedString, height: CGFloat)]) {
+        let previousContext = NSGraphicsContext.current
+        NSGraphicsContext.current = graphicsContext
+        graphicsContext.cgContext.setFillColor(NSColor.white.cgColor)
+        graphicsContext.cgContext.fill(pixelRect)
+        graphicsContext.cgContext.saveGState()
+        graphicsContext.cgContext.scaleBy(x: scale, y: scale)
+        graphicsContext.cgContext.translateBy(x: 0, y: rect.height)
+        graphicsContext.cgContext.scaleBy(x: 1, y: -1)
+        var y: CGFloat = 0
+        for line in lines {
+            line.text.removingTrailingNewline.draw(
+                with: CGRect(x: 0, y: y, width: rect.width, height: CGFloat.greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading]
+            )
+            y += line.height
+        }
         graphicsContext.cgContext.restoreGState()
         NSGraphicsContext.current = previousContext
     }
@@ -119,6 +146,13 @@ private let lineColors = [
     NSColor.systemRed.withAlphaComponent(0.65),
 ]
 private let surface = OffscreenSurface(pixelSize: CGSize(width: 112, height: 220), scale: 2)
+
+private extension NSAttributedString {
+    var removingTrailingNewline: NSAttributedString {
+        guard string.hasSuffix("\n"), length > 0 else { return self }
+        return attributedSubstring(from: NSRange(location: 0, length: length - 1))
+    }
+}
 
 private func makeDetailsText(fonts: DetailsFonts, usesColors: Bool) -> NSAttributedString {
     let text = NSMutableAttributedString()
@@ -162,6 +196,50 @@ private func makeDetailsText(fonts: DetailsFonts, usesColors: Bool) -> NSAttribu
 
 private func drawDetailsText(fonts: DetailsFonts, usesColors: Bool) {
     surface?.draw(makeDetailsText(fonts: fonts, usesColors: usesColors))
+}
+
+private func makeDetailsLineTexts(
+    fonts: DetailsFonts,
+    usesColors: Bool
+) -> [(text: NSAttributedString, height: CGFloat)] {
+    var result: [(text: NSAttributedString, height: CGFloat)] = []
+
+    for (index, lineText) in lines.enumerated() {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .right
+        if index == 1 || index == 3 {
+            paragraphStyle.paragraphSpacing = 4
+        }
+
+        let line = NSMutableAttributedString(
+            string: "\(lineText)\n",
+            attributes: [
+                NSAttributedString.Key.font: fonts.valueFont,
+                NSAttributedString.Key.foregroundColor: usesColors ? lineColors[index] : NSColor.labelColor,
+                NSAttributedString.Key.paragraphStyle: paragraphStyle,
+            ]
+        )
+
+        if let percentFont = fonts.percentFont {
+            let nsLineText = lineText as NSString
+            if nsLineText.hasSuffix("%") {
+                line.addAttribute(
+                    NSAttributedString.Key.font,
+                    value: percentFont,
+                    range: NSRange(location: nsLineText.length - 1, length: 1)
+                )
+            }
+        }
+
+        let height: CGFloat = 15 + paragraphStyle.paragraphSpacing
+        result.append((line, height))
+    }
+
+    return result
+}
+
+private func drawDetailsLines(fonts: DetailsFonts, usesColors: Bool) {
+    surface?.draw(lines: makeDetailsLineTexts(fonts: fonts, usesColors: usesColors))
 }
 
 benchmark("Fonts.TabularNSFont") {
@@ -247,6 +325,12 @@ benchmark("Offscreen.MixedFontsAndColors.CachedFonts") {
     }
 }
 
+benchmark("Offscreen.MixedFontsAndColors.LineByLine.CachedFonts") {
+    autoreleasepool {
+        drawDetailsLines(fonts: mixedFonts, usesColors: true)
+    }
+}
+
 benchmark("Offscreen.MixedFontsAndColors.UncachedFonts") {
     autoreleasepool {
         drawDetailsText(
@@ -260,7 +344,8 @@ benchmark("Offscreen.MixedFontsAndColors.UncachedFonts") {
 }
 
 if let debugImagePath = ProcessInfo.processInfo.environment["OFFSCREEN_DEBUG_IMAGE"] {
-    drawDetailsText(fonts: mixedFonts, usesColors: true)
+    drawDetailsLines(fonts: mixedFonts, usesColors: true)
+    // drawDetailsText(fonts: mixedFonts, usesColors: true)
     try surface?.writePNG(to: URL(fileURLWithPath: debugImagePath))
 }
 

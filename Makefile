@@ -111,7 +111,7 @@ helper-restart: app
 .PHONY: benchmarks
 benchmarks:
 	swift run -c release --package-path Benchmarks Benchmarks \
-		--warmup-iterations 3 --max-iterations 10000 --min-time 1 \
+		--warmup-iterations 3 --max-iterations 2000 --min-time 1 \
 		--time-unit us --columns name,time,throughput,std,iterations
 
 .PHONY: profile
