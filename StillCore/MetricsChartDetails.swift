@@ -16,8 +16,49 @@ final class MetricsCurrentValuesRenderer: LineChartRenderer {
     private var lineHeights: [CGFloat] = []
 
     func resetCurrentValuesLayout() {
-        lineHeights = []
         currentValuesHeight = nil
+        lineHeights = []
+    }
+
+    func currentValuesRow(at point: CGPoint) -> MetricsDetailsBuilder.Row? {
+        guard let chartView = dataProvider as? MetricsLineChartView else { return nil }
+        let rows = MainActor.assumeIsolated {
+            MetricsDetailsBuilder.buildRows(
+                from: chartView.getMaterializedPointsSlice(),
+                series: chartView.series
+            )
+        }
+        let textHeight = currentValuesHeight ?? lineHeights.reduce(0, +)
+        guard !rows.isEmpty,
+              !lineHeights.isEmpty,
+              point.x >= viewPortHandler.contentRight
+        else {
+            return nil
+        }
+
+        let baseY = viewPortHandler.contentBottom - textHeight
+        guard point.y >= baseY, point.y <= viewPortHandler.contentBottom else {
+            return nil
+        }
+
+        var y = baseY
+        var lineIndex = 0
+
+        for row in rows {
+            let rowStartY = y
+
+            for _ in row.items {
+                guard lineHeights.indices.contains(lineIndex) else { return nil }
+                y += lineHeights[lineIndex]
+                lineIndex += 1
+            }
+
+            if point.y >= rowStartY, point.y <= y {
+                return row
+            }
+        }
+
+        return nil
     }
 
     override func drawExtras(context: CGContext) {
@@ -29,13 +70,23 @@ final class MetricsCurrentValuesRenderer: LineChartRenderer {
                 series: chartView.series
             )
         }
-        drawLatestValues(rows: rows)
+        let hiddenDescriptors = MainActor.assumeIsolated { chartView.hiddenDescriptors }
+        drawLatestValues(rows: rows, hiddenDescriptors: hiddenDescriptors)
     }
 
-    private func drawLatestValues(rows: [MetricsDetailsBuilder.Row]) {
+    private func drawLatestValues(
+        rows: [MetricsDetailsBuilder.Row],
+        hiddenDescriptors: Set<Int>
+    ) {
         let overlap: CGFloat = 8
-        let valueLines = MetricsDetailsTextBuilder.buildValueLines(from: rows)
-        let labelLines = MetricsDetailsTextBuilder.buildLabelLines(from: rows)
+        let valueLines = MetricsDetailsTextBuilder.buildValueLines(
+            from: rows,
+            hiddenDescriptors: hiddenDescriptors
+        )
+        let labelLines = MetricsDetailsTextBuilder.buildLabelLines(
+            from: rows,
+            hiddenDescriptors: hiddenDescriptors
+        )
         guard !valueLines.isEmpty else {
             return
         }
@@ -109,6 +160,7 @@ final class MetricsCurrentValuesRenderer: LineChartRenderer {
 enum MetricsDetailsBuilder {
     struct Row {
         struct Item {
+            let descriptorIndex: Int
             let text: String
             let color: NSColor
             let label: String?
@@ -156,6 +208,7 @@ enum MetricsDetailsBuilder {
 
             currentItems.append(
                 .init(
+                    descriptorIndex: point.descriptorIndex,
                     text: descriptor.detailsFormatter(point.detailsValue),
                     color: itemColor,
                     label: currentItems.isEmpty ? descriptor.title : nil
@@ -170,6 +223,7 @@ enum MetricsDetailsBuilder {
 
 enum MetricsDetailsTextBuilder {
     private static let rowSpacing: CGFloat = 4
+    private static let hiddenTextAlpha: CGFloat = 0.5
 
     private static func valueFont(for fontSize: CGFloat) -> NSFont {
         switch fontSize {
@@ -182,7 +236,10 @@ enum MetricsDetailsTextBuilder {
         }
     }
 
-    static func buildLabelLines(from rows: [MetricsDetailsBuilder.Row]) -> [NSAttributedString] {
+    static func buildLabelLines(
+        from rows: [MetricsDetailsBuilder.Row],
+        hiddenDescriptors: Set<Int> = []
+    ) -> [NSAttributedString] {
         rows.enumerated().flatMap { rowIndex, row in
             row.items.enumerated().map { itemIndex, item in
                 let paragraphStyle = NSMutableParagraphStyle()
@@ -191,11 +248,14 @@ enum MetricsDetailsTextBuilder {
                    rowIndex < rows.indices.last ?? 0 {
                     paragraphStyle.paragraphSpacing = rowSpacing
                 }
+                let color = hiddenDescriptors.contains(item.descriptorIndex)
+                    ? item.color.withAlphaComponent(hiddenTextAlpha)
+                    : item.color
                 return NSAttributedString(
                     string: (item.label ?? "") + "\n",
                     attributes: [
                         .font: AppFonts.chartLegend,
-                        .foregroundColor: item.color,
+                        .foregroundColor: color,
                         .paragraphStyle: paragraphStyle,
                     ]
                 )
@@ -205,6 +265,7 @@ enum MetricsDetailsTextBuilder {
 
     static func buildValueLines(
         from rows: [MetricsDetailsBuilder.Row],
+        hiddenDescriptors: Set<Int> = [],
         fontSize: CGFloat = 12
     ) -> [NSAttributedString] {
         let font = valueFont(for: fontSize)
@@ -217,11 +278,14 @@ enum MetricsDetailsTextBuilder {
                    rowIndex < rows.indices.last ?? 0 {
                     paragraphStyle.paragraphSpacing = rowSpacing
                 }
+                let color = hiddenDescriptors.contains(item.descriptorIndex)
+                    ? item.color.withAlphaComponent(hiddenTextAlpha)
+                    : item.color
                 let line = NSMutableAttributedString(
                     string: "\(item.text)\n",
                     attributes: [
                         .font: font,
-                        .foregroundColor: item.color,
+                        .foregroundColor: color,
                         .paragraphStyle: paragraphStyle,
                     ]
                 )

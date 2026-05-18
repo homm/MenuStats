@@ -180,6 +180,18 @@ final class ChartDataController {
             dataSet.removeFirst(dataSet.count - capacity - 1)
         }
     }
+
+    func visibleYMax(fromX: Double, toX: Double, fallback: Double) -> Double {
+        var yMax = fallback
+
+        for dataSet in dataSets where dataSet.isVisible {
+            for entry in dataSet.entries where entry.x >= fromX && entry.x <= toX {
+                yMax = max(yMax, entry.y)
+            }
+        }
+
+        return yMax
+    }
 }
 
 
@@ -318,18 +330,21 @@ final class MetricsLineChartView: LineChartView {
     )
     var series: [MetricsSeriesDescriptor] = []
     var clearHighlight: (() -> Void)?
+    var onCurrentValuesRowMouseDown: ((MetricsDetailsBuilder.Row, Bool) -> Void)?
+    var hiddenDescriptors: Set<Int> = []
+    nonisolated(unsafe) private var currentValuesMouseDownMonitor: Any?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        installCurrentValuesRenderer()
+        commonInit()
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
-        installCurrentValuesRenderer()
+        commonInit()
     }
 
-    private func installCurrentValuesRenderer() {
+    private func commonInit() {
         self.renderer = MetricsCurrentValuesRenderer(
             dataProvider: self,
             animator: chartAnimator,
@@ -338,10 +353,50 @@ final class MetricsLineChartView: LineChartView {
         let marker = MetricsDetailsMarkerView()
         marker.chartView = self
         self.marker = marker
+        currentValuesMouseDownMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown]
+        ) { [weak self] event in
+            guard let self,
+                  event.window === self.window
+            else {
+                return event
+            }
+
+            let point = self.convert(event.locationInWindow, from: nil)
+            guard self.bounds.contains(point),
+                  let renderer = self.renderer as? MetricsCurrentValuesRenderer,
+                  let row = renderer.currentValuesRow(at: point)
+            else {
+                return event
+            }
+
+            self.onCurrentValuesRowMouseDown?(row, event.modifierFlags.contains(.shift))
+            return nil
+        }
+    }
+
+    deinit {
+        if let currentValuesMouseDownMonitor {
+            NSEvent.removeMonitor(currentValuesMouseDownMonitor)
+        }
     }
 
     func resetCurrentValuesLayout() {
         (renderer as? MetricsCurrentValuesRenderer)?.resetCurrentValuesLayout()
+    }
+
+    func applyCurrentValuesVisibility() {
+        guard let data else { return }
+
+        for case let dataSet as LineChartDataSet in data.dataSets {
+            guard let point = dataSet.first?.data as? MaterializedChartPoint,
+                  series.indices.contains(point.descriptorIndex)
+            else {
+                continue
+            }
+
+            dataSet.visible = !hiddenDescriptors.contains(point.descriptorIndex)
+        }
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -449,6 +504,38 @@ private struct MetricsDGChartView: NSViewRepresentable {
         chartView.extraBottomOffset = 4
         chartView.extraRightOffset = MetricsCurrentValuesLayout.rightOffset
         chartView.clearHighlight = { highlightedSampleX = nil }
+        chartView.onCurrentValuesRowMouseDown = { row, isShiftPressed in
+            let rowDescriptors = Set(row.items.map(\.descriptorIndex))
+            let allDescriptors = Set(
+                chartView.series.enumerated().compactMap { index, descriptor in
+                    descriptor.showsDetails ? index : nil
+                }
+            )
+            let otherDescriptors = allDescriptors.subtracting(rowDescriptors)
+
+            if isShiftPressed {
+                chartView.hiddenDescriptors = otherDescriptors
+            } else if chartView.hiddenDescriptors == otherDescriptors {
+                chartView.hiddenDescriptors = rowDescriptors
+            } else {
+                let isHidden = row.items.allSatisfy { chartView.hiddenDescriptors.contains($0.descriptorIndex) }
+                if isHidden {
+                    for item in row.items {
+                        chartView.hiddenDescriptors.remove(item.descriptorIndex)
+                    }
+                } else {
+                    for item in row.items {
+                        chartView.hiddenDescriptors.insert(item.descriptorIndex)
+                    }
+                }
+            }
+
+            chartView.applyCurrentValuesVisibility()
+            chartView.resetCurrentValuesLayout()
+            chartView.yMaxStabilizer.reset()
+            configureAxisRanges(chartView)
+            chartView.notifyDataSetChanged()
+        }
         chartView.delegate = context.coordinator
 
         let xAxis = chartView.xAxis
@@ -478,6 +565,7 @@ private struct MetricsDGChartView: NSViewRepresentable {
             chartView.yMaxStabilizer.reset()
             chartView.resetCurrentValuesLayout()
             chartView.series = controller.series
+            chartView.hiddenDescriptors.removeAll()
             configureAxes(chartView)
         }
 
@@ -516,9 +604,11 @@ private struct MetricsDGChartView: NSViewRepresentable {
         // Visual compensation for drawing outside of edge
         chartView.xAxis.axisMaximum = visibleMaxX + 0.1
 
-        controller.data?.calcMinMaxY(fromX: visibleMinX, toX: visibleMaxX)
-
-        let rawVisibleYMax = controller.data?.getYMax(axis: .left) ?? yStart
+        let rawVisibleYMax = controller.visibleYMax(
+            fromX: visibleMinX,
+            toX: visibleMaxX,
+            fallback: yStart
+        )
         let visibleHeight = max(0, rawVisibleYMax - yStart)
         chartView.leftAxis.axisMinimum = yStart
         chartView.leftAxis.axisMaximum =
