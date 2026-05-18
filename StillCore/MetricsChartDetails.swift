@@ -13,8 +13,10 @@ enum MetricsCurrentValuesLayout {
 
 final class MetricsCurrentValuesRenderer: LineChartRenderer {
     private var currentValuesHeight: CGFloat?
+    private var lineHeights: [CGFloat] = []
 
     func resetCurrentValuesLayout() {
+        lineHeights = []
         currentValuesHeight = nil
     }
 
@@ -27,45 +29,80 @@ final class MetricsCurrentValuesRenderer: LineChartRenderer {
                 series: chartView.series
             )
         }
-        let valuesText = MetricsDetailsTextBuilder.buildValuesText(from: rows)
-        let labelsText = MetricsDetailsTextBuilder.buildLabelsText(from: rows)
-        drawLatestValues(context: context, valuesText: valuesText, labelsText: labelsText)
+        drawLatestValues(rows: rows)
     }
 
-    private func drawLatestValues(
-        context: CGContext,
-        valuesText: NSAttributedString,
-        labelsText: NSAttributedString
-    ) {
-        guard valuesText.length > 0 else { return }
-        let overlap: CGFloat = 4
+    private func drawLatestValues(rows: [MetricsDetailsBuilder.Row]) {
+        let overlap: CGFloat = 8
+        let valueLines = MetricsDetailsTextBuilder.buildValueLines(from: rows)
+        let labelLines = MetricsDetailsTextBuilder.buildLabelLines(from: rows)
+        guard !valueLines.isEmpty else {
+            return
+        }
+
         let textHeight: CGFloat
-        if let currentValuesHeight {
+        if let currentValuesHeight, lineHeights.count == valueLines.count {
             textHeight = currentValuesHeight
         } else {
-            textHeight = valuesText.boundingRect(
-                with: CGSize(
+            lineHeights = measureLinesHeight(for: valueLines)
+            textHeight = lineHeights.reduce(0, +)
+            currentValuesHeight = textHeight
+        }
+
+        var y = viewPortHandler.contentBottom - textHeight
+        let valuesX = viewPortHandler.contentRight - overlap
+        let labelsX = viewPortHandler.contentRight + MetricsCurrentValuesLayout.valuesColumnWidth
+            + MetricsCurrentValuesLayout.columnSpacing
+
+        for ((valueLine, labelLine), height) in zip(zip(valueLines, labelLines), lineHeights) {
+            valueLine.removingTrailingNewline.draw(
+                with: CGRect(
+                    x: valuesX,
+                    y: y,
                     width: MetricsCurrentValuesLayout.valuesColumnWidth + overlap,
                     height: CGFloat.greatestFiniteMagnitude
                 ),
                 options: [.usesLineFragmentOrigin, .usesFontLeading]
-            ).height
-            currentValuesHeight = textHeight
+            )
+            labelLine.removingTrailingNewline.draw(
+                with: CGRect(
+                    x: labelsX,
+                    y: y,
+                    width: CGFloat.greatestFiniteMagnitude,
+                    height: CGFloat.greatestFiniteMagnitude
+                ),
+                options: [.usesLineFragmentOrigin, .usesFontLeading]
+            )
+
+            y += height
         }
-        let valuesRect = CGRect(
-            x: viewPortHandler.contentRight - overlap,
-            y: viewPortHandler.contentBottom - textHeight,
-            width: MetricsCurrentValuesLayout.valuesColumnWidth + overlap,
+    }
+
+    private func measureLinesHeight(for valueLines: [NSAttributedString]) -> [CGFloat] {
+        let unconstrainedSize = CGSize(
+            width: CGFloat.greatestFiniteMagnitude,
             height: CGFloat.greatestFiniteMagnitude
         )
-        let labelsRect = CGRect(
-            x: valuesRect.maxX + MetricsCurrentValuesLayout.columnSpacing,
-            y: valuesRect.minY,
-            width: CGFloat.greatestFiniteMagnitude,
-            height: valuesRect.height
-        )
-        valuesText.draw(with: valuesRect, options: [.usesLineFragmentOrigin, .usesFontLeading])
-        labelsText.draw(with: labelsRect, options: [.usesLineFragmentOrigin, .usesFontLeading])
+        let firstLine = valueLines[0]
+        let firstSymbolHeight = firstLine
+            .attributedSubstring(from: NSRange(location: 0, length: 1))
+            .boundingRect(
+                with: unconstrainedSize,
+                options: [.usesLineFragmentOrigin, .usesFontLeading]
+            ).height
+
+        return valueLines.map { line in
+            var lineHeight = line.boundingRect(
+                with: unconstrainedSize,
+                options: [.usesLineFragmentOrigin, .usesFontLeading]
+            ).height
+
+            if line.string.hasSuffix("\n") {
+                lineHeight -= firstSymbolHeight
+            }
+
+            return lineHeight
+        }
     }
 }
 
@@ -145,78 +182,59 @@ enum MetricsDetailsTextBuilder {
         }
     }
 
-    static func buildLabelsText(from rows: [MetricsDetailsBuilder.Row]) -> NSAttributedString {
-        let text = NSMutableAttributedString()
-
-        for (rowIndex, row) in rows.enumerated() {
-            for (itemIndex, item) in row.items.enumerated() {
+    static func buildLabelLines(from rows: [MetricsDetailsBuilder.Row]) -> [NSAttributedString] {
+        rows.enumerated().flatMap { rowIndex, row in
+            row.items.enumerated().map { itemIndex, item in
                 let paragraphStyle = NSMutableParagraphStyle()
                 paragraphStyle.alignment = .left
-
                 if itemIndex == row.items.indices.last,
                    rowIndex < rows.indices.last ?? 0 {
                     paragraphStyle.paragraphSpacing = rowSpacing
                 }
-
-                let attributes: [NSAttributedString.Key: Any] = [
-                    .font: AppFonts.chartLegend,
-                    .foregroundColor: item.color,
-                    .paragraphStyle: paragraphStyle,
-                ]
-                text.append(NSAttributedString(string: item.label ?? " ", attributes: attributes))
-
-                if itemIndex != row.items.indices.last || rowIndex < rows.indices.last ?? 0 {
-                    text.append(NSAttributedString(string: "\n", attributes: attributes))
-                }
+                return NSAttributedString(
+                    string: (item.label ?? "") + "\n",
+                    attributes: [
+                        .font: AppFonts.chartLegend,
+                        .foregroundColor: item.color,
+                        .paragraphStyle: paragraphStyle,
+                    ]
+                )
             }
         }
-
-        return text
     }
 
-    static func buildValuesText(
+    static func buildValueLines(
         from rows: [MetricsDetailsBuilder.Row],
         fontSize: CGFloat = 12
-    ) -> NSAttributedString {
+    ) -> [NSAttributedString] {
         let font = valueFont(for: fontSize)
         let percentFont = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .heavy)
-        let text = NSMutableAttributedString()
-
-        for (rowIndex, row) in rows.enumerated() {
-            for (itemIndex, item) in row.items.enumerated() {
-                if text.length > 0 {
-                    text.append(NSAttributedString(string: "\n"))
-                }
-
+        return rows.enumerated().flatMap { rowIndex, row in
+            row.items.enumerated().map { itemIndex, item in
                 let paragraphStyle = NSMutableParagraphStyle()
                 paragraphStyle.alignment = .right
-
                 if itemIndex == row.items.indices.last,
                    rowIndex < rows.indices.last ?? 0 {
                     paragraphStyle.paragraphSpacing = rowSpacing
                 }
-
-                let lineText = item.text
                 let line = NSMutableAttributedString(
-                    string: lineText,
+                    string: "\(item.text)\n",
                     attributes: [
                         .font: font,
                         .foregroundColor: item.color,
                         .paragraphStyle: paragraphStyle,
                     ]
                 )
-                let nsLineText = lineText as NSString
-                if nsLineText.hasSuffix("%") {
-                    let percentRange = NSRange(location: nsLineText.length - 1, length: 1)
+                let nsLine = item.text as NSString
+                if nsLine.hasSuffix("%") {
+                    let percentRange = NSRange(location: nsLine.length - 1, length: 1)
                     line.addAttribute(.font, value: percentFont, range: percentRange)
                 }
-
-                text.append(line)
+                return line
             }
         }
-
-        return text
     }
+
 }
 
 class FormattedTextMarkerView: MarkerView {
@@ -292,6 +310,13 @@ class FormattedTextMarkerView: MarkerView {
     }
 }
 
+private extension NSAttributedString {
+    var removingTrailingNewline: NSAttributedString {
+        guard string.hasSuffix("\n"), length > 0 else { return self }
+        return attributedSubstring(from: NSRange(location: 0, length: length - 1))
+    }
+}
+
 final class MetricsDetailsMarkerView: FormattedTextMarkerView {
     var showsSampleTime = false
 
@@ -339,7 +364,9 @@ final class MetricsDetailsMarkerView: FormattedTextMarkerView {
             text.append(buildTimeText(from: sampleDate))
         }
 
-        text.append(MetricsDetailsTextBuilder.buildValuesText(from: rows, fontSize: 10))
-        attributedText = text
+        for line in MetricsDetailsTextBuilder.buildValueLines(from: rows, fontSize: 10) {
+            text.append(line)
+        }
+        attributedText = text.removingTrailingNewline
     }
 }
