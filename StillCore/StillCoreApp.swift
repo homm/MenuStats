@@ -63,8 +63,6 @@ enum AppFonts {
         ofSize: 12, weight: .semibold)
     nonisolated(unsafe) static let intervalMenuLabel = tabularSystemFont(
         ofSize: NSFont.systemFontSize, weight: .regular)
-    nonisolated(unsafe) static let intervalFraction = tabularSystemFont(
-        ofSize: NSFont.systemFontSize - 3, weight: .medium)
     nonisolated(unsafe) static let batteryPercent = tabularSystemFont(
         ofSize: 12, weight: .medium)
     static let helpIcon = Font.system(size: 13, weight: .semibold)
@@ -503,6 +501,7 @@ struct ContentView: View {
                     (Text(Image(systemName: "clock.arrow.circlepath"))
                     + Text(intervalLabel))
                         .font(Font(AppFonts.intervalMenuLabel))
+                        .foregroundStyle(.primary)
                 }
                     .menuStyle(.button)
                     .buttonStyle(.accessoryBar)
@@ -630,14 +629,7 @@ struct ContentView: View {
             fraction = ".\(digits)"
         }
 
-        var label = AttributedString("\u{2009}\(wholeSeconds)")
-        var attributedFraction = AttributedString(fraction)
-        if !wholeSeconds.isEmpty {
-            attributedFraction.font = Font(AppFonts.intervalFraction)
-        }
-        label += attributedFraction
-        label += AttributedString("s")
-        return label
+        return AttributedString("\u{2009}\(wholeSeconds)\(fraction)s")
     }
 
     private static let intervalMenuOptions = [

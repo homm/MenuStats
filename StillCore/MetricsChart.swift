@@ -689,29 +689,33 @@ struct MetricsChartSection: View {
     }
 
     private func headerView() -> some View {
-        HStack(alignment: .lastTextBaseline, spacing: MetricsCurrentValuesLayout.columnSpacing) {
+        HStack(alignment: .lastTextBaseline, spacing: 3) {
             Spacer()
             Text(definition.title)
                 .font(.headline)
-            Text(definition.unitLabel)
-                .foregroundStyle(.secondary)
-                .padding(.leading, MetricsCurrentValuesLayout.columnSpacing)
-            HStack {
-                if let helpMarkdown = definition.helpMarkdown {
-                    Button {
-                        isHelpPresented.toggle()
-                    } label: {
-                        Image(systemName: "questionmark.circle")
-                            .font(AppFonts.helpIcon)
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .popover(isPresented: $isHelpPresented, arrowEdge: .trailing) {
-                        ChartHelpPopover(markdown: helpMarkdown)
-                    }
+            if let helpMarkdown = definition.helpMarkdown {
+                Button {
+                    isHelpPresented.toggle()
+                } label: {
+                    Image(systemName: "questionmark.circle")
+                        .font(AppFonts.helpIcon)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .popover(isPresented: $isHelpPresented, arrowEdge: .trailing) {
+                    ChartHelpPopover(markdown: helpMarkdown)
                 }
             }
-                .frame(width: MetricsCurrentValuesLayout.labelsColumnWidth, alignment: .leading)
+            HStack {
+                Text(definition.unitLabel)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 3)
+                Spacer()
+            }
+                .frame(
+                    width: MetricsCurrentValuesLayout.valuesColumnWidth +
+                        MetricsCurrentValuesLayout.labelsColumnWidth
+                )
         }
     }
 }
