@@ -585,7 +585,7 @@ struct ContentView: View {
                 } else {
                     if let currentPercent = batteryTrackerService.runtimeState?.lastComputedStatus?.currentPercent {
                         HStack(spacing: 4) {
-                            BatteryIndicatorView(percent: currentPercent)
+                            Image(nsImage: BatteryIndicatorImage.make(percent: currentPercent))
                                 .foregroundStyle(.secondary)
                             Text("\(currentPercent)%")
                                 .foregroundStyle(.secondary)
@@ -641,32 +641,65 @@ struct ContentView: View {
     ]
 }
 
-private struct BatteryIndicatorView: View {
-    let percent: Int
-    private let bodyWidth: CGFloat = 24
-    private let bodyHeight: CGFloat = 12
-    private let bodyInset: CGFloat = 2
+enum BatteryIndicatorImage {
+    private static let bodyWidth: CGFloat = 23
+    private static let bodyHeight: CGFloat = 12
+    private static let bodyInset: CGFloat = 2
+    private static let strokeWidth: CGFloat = 1
+    private static let capVisibleWidth: CGFloat = 1.5
+    private static let capDiameter: CGFloat = 4.5
+    private static let spacing: CGFloat = 1
 
-    var body: some View {
+    static let size = CGSize(
+        width: bodyWidth + spacing + capVisibleWidth,
+        height: bodyHeight
+    )
+
+    static func make(percent: Int, usesSecondaryMask: Bool = false) -> NSImage {
         let clampedPercent = min(max(percent, 0), 100)
-        let fillWidth = max(bodyWidth - bodyInset * 2, 0) * CGFloat(clampedPercent) / 100
 
-        HStack(spacing: 1) {
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 3)
-                    .strokeBorder(style: StrokeStyle(lineWidth: 1))
+        let image = NSImage(size: size)
+        image.lockFocus()
 
-                RoundedRectangle(cornerRadius: 1.5)
-                    .frame(width: fillWidth)
-                    .padding(bodyInset)
-            }
-            .frame(width: bodyWidth, height: bodyHeight)
-
-            Circle()
-                .frame(width: 6, height: 6)
-                .frame(width: 2, height: 6, alignment: .trailing)
-                .clipped()
+        if usesSecondaryMask {
+            NSColor.black.withAlphaComponent(0.5).setStroke()
         }
+        let strokeRect = NSRect(x: 0, y: 0, width: bodyWidth, height: bodyHeight)
+            .insetBy(dx: strokeWidth / 2, dy: strokeWidth / 2)
+        let strokeRadius = 3 - strokeWidth / 4
+        let strokePath = NSBezierPath(roundedRect: strokeRect, xRadius: strokeRadius, yRadius: strokeRadius)
+        strokePath.lineWidth = strokeWidth
+        strokePath.stroke()
+
+        if usesSecondaryMask {
+            NSColor.black.setFill()
+        }
+        let fillWidth = max(bodyWidth - bodyInset * 2, 0) * CGFloat(clampedPercent) / 100
+        let fillRect = NSRect(
+            x: bodyInset, y: bodyInset,
+            width: fillWidth, height: bodyHeight - bodyInset * 2
+        )
+        NSBezierPath(roundedRect: fillRect, xRadius: 1.5, yRadius: 1.5).fill()
+
+        if usesSecondaryMask {
+            NSColor.black.withAlphaComponent(0.6).setFill()
+        }
+        let clipRect = NSRect(
+            x: bodyWidth + spacing, y: (bodyHeight - capDiameter) / 2,
+            width: capVisibleWidth, height: capDiameter
+        )
+        let capRect = NSRect(
+            x: clipRect.minX - capDiameter + capVisibleWidth, y: clipRect.minY,
+            width: capDiameter, height: capDiameter
+        )
+        NSGraphicsContext.current?.saveGraphicsState()
+        NSBezierPath(rect: clipRect).addClip()
+        NSBezierPath(ovalIn: capRect).fill()
+        NSGraphicsContext.current?.restoreGraphicsState()
+
+        image.unlockFocus()
+        image.isTemplate = true
+        return image
     }
 }
 

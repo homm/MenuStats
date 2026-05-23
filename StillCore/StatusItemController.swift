@@ -18,6 +18,7 @@ private struct StatusItemDisplayDescriptor {
 private enum StatusItemDisplaySource {
     case icon
     case metrics((Metrics) -> Double?, (Double) -> String)
+    case batteryIcon
     case batteryStatus((BatteryTrackerState) -> String?)
 }
 
@@ -72,7 +73,14 @@ final class StatusItemController: NSObject {
 
     private func updateStatusItemBatteryState(_ state: BatteryTrackerState?) {
         lastBatteryState = state
-        applyStatusItemBatteryState(to: statusItem)
+        switch selectedDisplayDescriptor.source {
+        case .batteryIcon:
+            applyStatusItemBatteryIcon(to: statusItem)
+        case .batteryStatus:
+            applyStatusItemBatteryState(to: statusItem)
+        case .icon, .metrics:
+            return
+        }
     }
 
     private func formatStatusItemPower(_ value: Double) -> String {
@@ -141,16 +149,25 @@ final class StatusItemController: NSObject {
         applyStatusItemTitle(title, to: statusItem)
     }
 
-    private func applyStatusItemIcon(to statusItem: NSStatusItem) {
-        guard let button = statusItem.button else { return }
-        if button.image != nil && button.title.isEmpty {
+    private func applyStatusItemBatteryIcon(to statusItem: NSStatusItem) {
+        guard let percent = lastBatteryState?.lastComputedStatus?.currentPercent else {
+            applyStatusItemIcon(to: statusItem)
             return
         }
+        applyStatusItemImage(BatteryIndicatorImage.make(percent: percent, usesSecondaryMask: true), to: statusItem)
+    }
+
+    private func applyStatusItemIcon(to statusItem: NSStatusItem) {
         let image = NSImage(
             systemSymbolName: AppPresentation.statusItemSystemImageName,
             accessibilityDescription: AppPresentation.statusItemToolTip
         )
         image?.isTemplate = true
+        applyStatusItemImage(image, to: statusItem)
+    }
+
+    private func applyStatusItemImage(_ image: NSImage?, to statusItem: NSStatusItem) {
+        guard let button = statusItem.button else { return }
         button.image = image
         button.title = ""
     }
@@ -185,6 +202,8 @@ final class StatusItemController: NSObject {
         switch selectedDisplayDescriptor.source {
         case .metrics:
             applyStatusItemMetrics(to: statusItem)
+        case .batteryIcon:
+            applyStatusItemBatteryIcon(to: statusItem)
         case .batteryStatus:
             applyStatusItemBatteryState(to: statusItem)
         case .icon:
@@ -204,6 +223,11 @@ final class StatusItemController: NSObject {
                 displayName: "Battery percent",
                 persistenceValue: "batteryPercent",
                 source: .batteryStatus(formatStatusItemBatteryPercent)
+            ),
+            StatusItemDisplayDescriptor(
+                displayName: "Battery icon",
+                persistenceValue: "batteryIcon",
+                source: .batteryIcon
             ),
             StatusItemDisplayDescriptor(
                 displayName: "System power",
