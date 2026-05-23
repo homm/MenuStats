@@ -150,11 +150,18 @@ final class StatusItemController: NSObject {
     }
 
     private func applyStatusItemBatteryIcon(to statusItem: NSStatusItem) {
-        guard let percent = lastBatteryState?.lastComputedStatus?.currentPercent else {
+        guard
+            let lastBatteryState,
+            let image = BatteryIndicatorImage.make(
+                state: lastBatteryState,
+                usesSecondaryMask: true,
+                energySave: false
+            )
+        else {
             applyStatusItemIcon(to: statusItem)
             return
         }
-        applyStatusItemImage(BatteryIndicatorImage.make(percent: percent, usesSecondaryMask: true), to: statusItem)
+        applyStatusItemImage(image, to: statusItem)
     }
 
     private func applyStatusItemIcon(to statusItem: NSStatusItem) {
