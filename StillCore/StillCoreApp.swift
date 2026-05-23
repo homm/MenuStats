@@ -674,18 +674,31 @@ private struct BatteryIndicatorView: View {
 private struct StatusItemDisplayDescriptor {
     let displayName: String
     let persistenceValue: String
-    let getValue: (Metrics) -> Double?
-    let formatValue: (Double) -> String
+    let source: StatusItemDisplaySource
+
+    static let icon = StatusItemDisplayDescriptor(
+        displayName: "Icon",
+        persistenceValue: "icon",
+        source: .icon
+    )
+}
+
+private enum StatusItemDisplaySource {
+    case icon
+    case metrics((Metrics) -> Double?, (Double) -> String)
+    case batteryStatus((BatteryTrackerState) -> String?)
 }
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var presentationController: MenuPresentationController<ContentView>?
     private var statusMetricsSubscription: AnyCancellable?
+    private var statusBatterySubscription: AnyCancellable?
     private let statusItemMenu = NSMenu()
     private var lastMetrics: Metrics?
+    private var lastBatteryState: BatteryTrackerState?
     private var statusItemDisplayDescriptors: [StatusItemDisplayDescriptor] = []
-    private var selectedStatusItemDisplayPersistenceValue = AppSettings.statusItemDisplayMode ?? "icon"
+    private var selectedStatusItemDescriptor = StatusItemDisplayDescriptor.icon
     private let restartHelperArgument = "--helper-restart"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -713,7 +726,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 button.image = nil
                 button.font = AppFonts.statusItemButton
                 button.toolTip = AppPresentation.statusItemToolTip
-                self.applyStatusItemDisplay(metrics: nil, to: statusItem)
+                self.applyStatusItemIcon(to: statusItem)
             },
             configureWindow: { window in
                 window.title = AppPresentation.floatingWindowTitle
@@ -722,26 +735,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         )
 
+        // Metrics build the dynamic menu and refresh all metric-backed status titles
         statusMetricsSubscription = AppDependencies.shared.metricsPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] metrics in
-                self?.updateStatusItem(with: metrics)
+                self?.updateStatusItemMetrics(metrics)
+            }
+
+        // Battery state is produced by the helper
+        statusBatterySubscription = BatteryTrackerService.shared.runtimeStatePublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] state in
+                self?.updateStatusItemBatteryState(state)
             }
     }
 
-    private func updateStatusItem(with metrics: Metrics) {
+    private func updateStatusItemMetrics(_ metrics: Metrics) {
         guard let statusItem = presentationController?.statusItem else { return }
         lastMetrics = metrics
         if statusItemDisplayDescriptors.isEmpty {
             buildStatusItemMenu(with: metrics)
+            applyStatusItemDisplayMode(AppSettings.statusItemDisplayMode ?? "icon")
+        } else {
+            applyStatusItemMetrics(to: statusItem)
         }
-        let sanitizedPersistenceValue = sanitizedPersistenceValue(selectedStatusItemDisplayPersistenceValue)
-        if selectedStatusItemDisplayPersistenceValue != sanitizedPersistenceValue {
-            selectedStatusItemDisplayPersistenceValue = sanitizedPersistenceValue
-            AppSettings.statusItemDisplayMode = selectedStatusItemDisplayPersistenceValue
-            updateStatusItemMenuSelection()
-        }
-        applyStatusItemDisplay(metrics: metrics, to: statusItem)
+    }
+
+    private func updateStatusItemBatteryState(_ state: BatteryTrackerState?) {
+        lastBatteryState = state
+        guard let statusItem = presentationController?.statusItem else { return }
+        applyStatusItemBatteryState(to: statusItem)
     }
 
     private func formatStatusItemPower(_ value: Double) -> String {
@@ -754,6 +777,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func formatStatusItemUsage(_ value: Double) -> String {
         String(format: "%4.1f%%", locale: FormatLocale.posix, value * 100.0)
+    }
+
+    private func formatStatusItemPercent(_ value: Double) -> String {
+        String(format: "%3.0f%%", locale: FormatLocale.posix, value)
+    }
+
+    private func formatStatusItemBatteryPercent(_ state: BatteryTrackerState) -> String? {
+        guard let percent = state.lastComputedStatus?.currentPercent else { return nil }
+        return formatStatusItemPercent(Double(percent))
     }
 
     private func formatStatusItemFrequency(_ valueGHz: Double) -> String {
@@ -780,16 +812,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateStatusItemMenuSelection()
     }
 
-    private func applyStatusItemDisplay(metrics: Metrics?, to statusItem: NSStatusItem) {
-        if
-            let metrics,
-            let descriptor = selectedStatusItemDisplayDescriptor,
-            let value = descriptor.getValue(metrics)
-        {
-            applyStatusItemTitle(descriptor.formatValue(value), to: statusItem)
-        } else {
-            applyStatusItemIcon(to: statusItem)
+    private func applyStatusItemMetrics(to statusItem: NSStatusItem) {
+        guard case .metrics(let getValue, let formatValue) = selectedStatusItemDescriptor.source else {
+            return
         }
+        guard let lastMetrics, let value = getValue(lastMetrics) else {
+            applyStatusItemIcon(to: statusItem)
+            return
+        }
+        applyStatusItemTitle(formatValue(value), to: statusItem)
+    }
+
+    private func applyStatusItemBatteryState(to statusItem: NSStatusItem) {
+        guard case .batteryStatus(let formatValue) = selectedStatusItemDescriptor.source else {
+            return
+        }
+        guard let lastBatteryState, let title = formatValue(lastBatteryState) else {
+            applyStatusItemIcon(to: statusItem)
+            return
+        }
+        applyStatusItemTitle(title, to: statusItem)
     }
 
     private func applyStatusItemIcon(to statusItem: NSStatusItem) {
@@ -820,66 +862,89 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func sanitizedPersistenceValue(_ persistenceValue: String) -> String {
-        statusItemDisplayDescriptors.contains { $0.persistenceValue == persistenceValue } ? persistenceValue : "icon"
+        return statusItemDisplayDescriptors.contains { $0.persistenceValue == persistenceValue } ? persistenceValue : "icon"
     }
 
     private func updateStatusItemMenuSelection() {
         for item in statusItemMenu.items {
             guard let persistenceValue = item.representedObject as? String else { continue }
-            item.state = persistenceValue == selectedStatusItemDisplayPersistenceValue ? .on : .off
+            item.state = persistenceValue == selectedStatusItemDescriptor.persistenceValue ? .on : .off
+        }
+    }
+
+    private func applyStatusItemDisplayMode(_ persistenceValue: String) {
+        let selectedStatusItemDisplayMode = sanitizedPersistenceValue(persistenceValue)
+        selectedStatusItemDescriptor =
+            statusItemDisplayDescriptors.first { $0.persistenceValue == selectedStatusItemDisplayMode }
+            ?? .icon
+        AppSettings.statusItemDisplayMode = selectedStatusItemDescriptor.persistenceValue
+        updateStatusItemMenuSelection()
+
+        guard let statusItem = presentationController?.statusItem else { return }
+        switch selectedStatusItemDescriptor.source {
+        case .metrics:
+            applyStatusItemMetrics(to: statusItem)
+        case .batteryStatus:
+            applyStatusItemBatteryState(to: statusItem)
+        case .icon:
+            applyStatusItemIcon(to: statusItem)
         }
     }
 
     @objc private func selectStatusItemDisplayMode(_ sender: NSMenuItem) {
         guard let persistenceValue = sender.representedObject as? String else { return }
-
-        selectedStatusItemDisplayPersistenceValue = sanitizedPersistenceValue(persistenceValue)
-        AppSettings.statusItemDisplayMode = selectedStatusItemDisplayPersistenceValue
-        updateStatusItemMenuSelection()
-
-        guard let statusItem = presentationController?.statusItem else { return }
-        applyStatusItemDisplay(metrics: lastMetrics, to: statusItem)
-    }
-
-    private var selectedStatusItemDisplayDescriptor: StatusItemDisplayDescriptor? {
-        statusItemDisplayDescriptors.first { $0.persistenceValue == selectedStatusItemDisplayPersistenceValue }
+        applyStatusItemDisplayMode(persistenceValue)
     }
 
     private func makeStatusItemDisplayDescriptors(metrics: Metrics) -> [StatusItemDisplayDescriptor] {
         var descriptors = [
+            .icon,
             StatusItemDisplayDescriptor(
-                displayName: "Icon",
-                persistenceValue: "icon",
-                getValue: { _ in nil },
-                formatValue: { _ in "" }
+                displayName: "Battery percent",
+                persistenceValue: "batteryPercent",
+                source: .batteryStatus(formatStatusItemBatteryPercent)
             ),
             StatusItemDisplayDescriptor(
                 displayName: "System power",
                 persistenceValue: "systemPower",
-                getValue: { metrics in Double(metrics.power.board) },
-                formatValue: formatStatusItemPower
+                source: .metrics(
+                    { metrics in Double(metrics.power.board) },
+                    formatStatusItemPower
+                )
             ),
             StatusItemDisplayDescriptor(
                 displayName: "Chip power",
                 persistenceValue: "chipPower",
-                getValue: { metrics in Double(metrics.power.package) },
-                formatValue: formatStatusItemPower
+                source: .metrics(
+                    { metrics in Double(metrics.power.package) },
+                    formatStatusItemPower
+                )
             ),
             StatusItemDisplayDescriptor(
                 displayName: "Temperature",
                 persistenceValue: "maxTemperature",
-                getValue: { metrics in Double(max(metrics.temperature.cpuAverage, metrics.temperature.gpuAverage)) },
-                formatValue: formatStatusItemTemperature
+                source: .metrics(
+                    { metrics in
+                        Double(max(metrics.temperature.cpuAverage, metrics.temperature.gpuAverage))
+                    },
+                    formatStatusItemTemperature
+                )
             ),
             StatusItemDisplayDescriptor(
                 displayName: "CPU load",
                 persistenceValue: "totalCpuLoad",
-                getValue: { metrics in
-                    let totalUnits = metrics.cpu_usage.reduce(0) { $0 + Int($1.units) }
-                    let weightedUsage = metrics.cpu_usage.reduce(0 as Float) { $0 + ($1.usage * Float($1.units)) }
-                    return totalUnits > 0 ? Double(weightedUsage / Float(totalUnits)) : 0
-                },
-                formatValue: formatStatusItemUsage
+                source: .metrics(
+                    { metrics in
+                        let totalUnits = metrics.cpu_usage.reduce(0) {
+                            $0 + Int($1.units)
+                        }
+                        let weightedUsage = metrics.cpu_usage.reduce(0 as Float) {
+                            $0 + ($1.usage * Float($1.units))
+                        }
+                        return totalUnits > 0 ? Double(weightedUsage / Float(totalUnits)) : 0
+                    },
+                    formatStatusItemUsage
+                )
             ),
         ]
 
@@ -888,20 +953,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 StatusItemDisplayDescriptor(
                     displayName: "\(cluster.name) load",
                     persistenceValue: "cpuClusterLoad:\(index)",
-                    getValue: { metrics in
-                        guard metrics.cpu_usage.indices.contains(index) else { return nil }
-                        return Double(metrics.cpu_usage[index].usage)
-                    },
-                    formatValue: formatStatusItemUsage
+                    source: .metrics(
+                        { metrics in
+                            guard metrics.cpu_usage.indices.contains(index) else { return nil }
+                            return Double(metrics.cpu_usage[index].usage)
+                        },
+                        formatStatusItemUsage
+                    )
                 ),
                 StatusItemDisplayDescriptor(
                     displayName: "\(cluster.name) frequency",
                     persistenceValue: "cpuClusterFrequency:\(index)",
-                    getValue: { metrics in
-                        guard metrics.cpu_usage.indices.contains(index) else { return nil }
-                        return Double(metrics.cpu_usage[index].frequencyMHz) / 1000.0
-                    },
-                    formatValue: formatStatusItemFrequency
+                    source: .metrics(
+                        { metrics in
+                            guard metrics.cpu_usage.indices.contains(index) else { return nil }
+                            return Double(metrics.cpu_usage[index].frequencyMHz) / 1000.0
+                        },
+                        formatStatusItemFrequency
+                    )
                 ),
             ]
         }
@@ -910,23 +979,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             StatusItemDisplayDescriptor(
                 displayName: "RAM used",
                 persistenceValue: "ramUsed",
-                getValue: { metrics in Double(metrics.memory.ramUsage) / 1_073_741_824.0 },
-                formatValue: formatStatusItemMemoryGb
+                source: .metrics(
+                    { metrics in Double(metrics.memory.ramUsage) / 1_073_741_824.0 },
+                    formatStatusItemMemoryGb
+                )
             ),
             StatusItemDisplayDescriptor(
                 displayName: "RAM load",
                 persistenceValue: "ramLoad",
-                getValue: { metrics in
-                    guard metrics.memory.ramTotal > 0 else { return 0 }
-                    return Double(metrics.memory.ramUsage) / Double(metrics.memory.ramTotal)
-                },
-                formatValue: formatStatusItemUsage
+                source: .metrics(
+                    { metrics in
+                        guard metrics.memory.ramTotal > 0 else { return 0 }
+                        return Double(metrics.memory.ramUsage) / Double(metrics.memory.ramTotal)
+                    },
+                    formatStatusItemUsage
+                )
             ),
             StatusItemDisplayDescriptor(
                 displayName: "Swap used",
                 persistenceValue: "swapUsed",
-                getValue: { metrics in Double(metrics.memory.swapUsage) / 1_073_741_824.0 },
-                formatValue: formatStatusItemMemoryGb
+                source: .metrics(
+                    { metrics in Double(metrics.memory.swapUsage) / 1_073_741_824.0 },
+                    formatStatusItemMemoryGb
+                )
             ),
         ]
 

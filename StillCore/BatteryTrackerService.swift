@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 import ServiceManagement
 
@@ -23,6 +24,11 @@ final class BatteryTrackerService: ObservableObject {
     @Published private(set) var installState: BatteryTrackerInstallState = .notInstalled
     @Published private(set) var runtimeState: BatteryTrackerState?
     @Published private(set) var lastErrorMessage: String = ""
+
+    // Lets non-SwiftUI code observe runtimeState without exposing write access.
+    var runtimeStatePublisher: AnyPublisher<BatteryTrackerState?, Never> {
+        $runtimeState.eraseToAnyPublisher()
+    }
 
     private let store = BatteryTrackerStateStore()
     private let service = SMAppService.agent(plistName: BatteryTrackerConstants.launchAgentPlistName)
