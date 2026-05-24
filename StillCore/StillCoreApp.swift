@@ -474,7 +474,7 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            HStack {
+            HStack(spacing: 8) {
                 Text(dependencies.chipName ?? AppPresentation.floatingWindowTitle)
                     .font(.headline)
                 Text(dependencies.socSummary)
@@ -498,14 +498,19 @@ struct ContentView: View {
                     }
                         .keyboardShortcut("=", modifiers: [])
                 } label: {
-                    (Text(Image(systemName: "clock.arrow.circlepath"))
-                    + Text(intervalLabel))
-                        .font(Font(AppFonts.intervalMenuLabel))
-                        .foregroundStyle(.primary)
+                    HStack(spacing: 0) {
+                        Image(systemName: "clock.arrow.circlepath")
+                        Text(intervalLabel)
+                            .font(Font(AppFonts.intervalMenuLabel))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .semibold))
+                            .offset(y: 1)
+                            .padding(.leading, 2)
+                    }
                 }
-                    .menuStyle(.button)
-                    .buttonStyle(.accessoryBar)
+                    .buttonStyle(AccessoryLikeButtonStyle())
                     .help("Update interval")
+                    .padding(.trailing, 4)
                 Button {
                     presentationState.setPresentationMode(
                         presentationState.mode == .attached ? .floating : .attached)
