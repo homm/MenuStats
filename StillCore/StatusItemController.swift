@@ -19,7 +19,7 @@ private enum StatusItemDisplaySource {
     case icon
     case metrics((Metrics) -> Double?, (Double) -> String)
     case batteryIcon
-    case batteryStatus((BatteryTrackerState) -> String?)
+    case batteryStatus((BatteryRuntimeState) -> String?)
 }
 
 @MainActor
@@ -29,7 +29,7 @@ final class StatusItemController: NSObject {
     private var statusMetricsSubscription: AnyCancellable?
     private var statusBatterySubscription: AnyCancellable?
     private var lastMetrics: Metrics?
-    private var lastBatteryState: BatteryTrackerState?
+    private var lastBatteryState: BatteryRuntimeState?
     private var displayDescriptors: [StatusItemDisplayDescriptor] = []
     private var selectedDisplayDescriptor = StatusItemDisplayDescriptor.icon
 
@@ -71,7 +71,7 @@ final class StatusItemController: NSObject {
         }
     }
 
-    private func updateStatusItemBatteryState(_ state: BatteryTrackerState?) {
+    private func updateStatusItemBatteryState(_ state: BatteryRuntimeState?) {
         lastBatteryState = state
         switch selectedDisplayDescriptor.source {
         case .batteryIcon:
@@ -99,9 +99,8 @@ final class StatusItemController: NSObject {
         String(format: "%3.0f%%", locale: FormatLocale.posix, value)
     }
 
-    private func formatStatusItemBatteryPercent(_ state: BatteryTrackerState) -> String? {
-        guard let percent = state.lastComputedStatus?.currentPercent else { return nil }
-        return formatStatusItemPercent(Double(percent))
+    private func formatStatusItemBatteryPercent(_ state: BatteryRuntimeState) -> String? {
+        formatStatusItemPercent(state.currentPercent)
     }
 
     private func formatStatusItemFrequency(_ valueGHz: Double) -> String {
@@ -150,17 +149,15 @@ final class StatusItemController: NSObject {
     }
 
     private func applyStatusItemBatteryIcon(to statusItem: NSStatusItem) {
-        guard
-            let lastBatteryState,
-            let image = BatteryIndicatorImage.make(
-                state: lastBatteryState,
-                usesSecondaryMask: true,
-                energySave: false
-            )
-        else {
+        guard let lastBatteryState else {
             applyStatusItemIcon(to: statusItem)
             return
         }
+
+        let image = BatteryIndicatorImage.make(
+            state: lastBatteryState,
+            usesSecondaryMask: true
+        )
         applyStatusItemImage(image, to: statusItem)
     }
 

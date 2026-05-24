@@ -571,8 +571,21 @@ struct ContentView: View {
             }
 
             HStack(spacing: 8) {
-                if let actionTitle = batteryTrackerService.actionTitle {
+                if let batteryState = batteryTrackerService.runtimeState {
+                    HStack(spacing: 4) {
+                        Image(nsImage: BatteryIndicatorImage.make(
+                            state: batteryState,
+                            usesSecondaryMask: false
+                        ))
+                            .foregroundStyle(.secondary)
+                            .padding(.vertical, -2)
+                        Text("\(Int(batteryState.currentPercent.rounded()))%")
+                            .foregroundStyle(.secondary)
+                            .font(Font(AppFonts.batteryPercent))
+                    }
+                }
 
+                if let actionTitle = batteryTrackerService.actionTitle {
                     Text("Battery tracker:")
                     if batteryTrackerService.installState != .requiresApproval {
                         Text(batteryTrackerService.runtimeLabel)
@@ -583,24 +596,6 @@ struct ContentView: View {
                         batteryTrackerService.performPrimaryAction()
                     }
                 } else {
-                    if
-                        let batteryState = batteryTrackerService.runtimeState,
-                        let currentPercent = batteryState.lastComputedStatus?.currentPercent,
-                        let image = BatteryIndicatorImage.make(
-                            state: batteryState,
-                            usesSecondaryMask: false,
-                            energySave: false
-                        )
-                    {
-                        HStack(spacing: 4) {
-                            Image(nsImage: image)
-                                .foregroundStyle(.secondary)
-                                .padding(.vertical, -2)
-                            Text("\(currentPercent)%")
-                                .foregroundStyle(.secondary)
-                                .font(Font(AppFonts.batteryPercent))
-                        }
-                    }
                     Text(batteryTrackerService.statusText)
                         .textSelection(.enabled)
                         .foregroundStyle(.secondary)

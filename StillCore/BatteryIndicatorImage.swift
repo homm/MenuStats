@@ -18,16 +18,8 @@ enum BatteryIndicatorImage {
         height: bodyHeight + verticalExtension
     )
 
-    static func make(
-        state: BatteryTrackerState,
-        usesSecondaryMask: Bool,
-        energySave: Bool
-    ) -> NSImage? {
-        guard let percent = state.lastComputedStatus?.currentPercent else {
-            return nil
-        }
-
-        let clampedPercent = min(max(percent, 0), 100)
+    static func make(state: BatteryRuntimeState, usesSecondaryMask: Bool) -> NSImage {
+        let clampedPercent = min(max(state.currentPercent, 0), 100)
 
         let image = NSImage(size: size)
         image.lockFocus()
@@ -77,7 +69,7 @@ enum BatteryIndicatorImage {
             height: chargeStatusSymbolSize
         )
         switch state.chargeStatus {
-        case .charging:
+        case .charging, .charged:
             let chargePath = BatteryOverlaySymbol.bolt.path(in: chargeRect)
             drawOverlayMask(chargePath, strokeWidth: 2)
         case .onHold:
@@ -87,7 +79,7 @@ enum BatteryIndicatorImage {
             break
         }
 
-        if energySave {
+        if state.batteryStatus.powerSaveMode {
             let leafRect = NSRect(x: 0, y: -1, width: powerSaveModeSymbolSize, height: powerSaveModeSymbolSize)
             let leafPath = BatteryOverlaySymbol.leaf.path(in: leafRect)
             drawOverlayMask(leafPath, strokeWidth: 3)
