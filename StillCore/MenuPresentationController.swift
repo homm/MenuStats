@@ -114,7 +114,7 @@ final class MenuPresentationController<Content: View>: NSObject, NSWindowDelegat
     init(
         @ViewBuilder content: @escaping ContentBuilder,
         statusItemMenu: NSMenu? = nil,
-        configureWindow: ((NSWindow) -> Void)? = nil
+        configureWindow: ((NSWindow, PresentationMode) -> Void)? = nil
     ) {
         hostingView = NSHostingView(rootView: AnyView(content(presentationState)))
         hostingView.sizingOptions = []
@@ -131,8 +131,8 @@ final class MenuPresentationController<Content: View>: NSObject, NSWindowDelegat
 
         attachedWindow.delegate = self
         floatingWindow.delegate = self
-        configureWindow?(attachedWindow)
-        configureWindow?(floatingWindow)
+        configureWindow?(attachedWindow, .attached)
+        configureWindow?(floatingWindow, .floating)
         configureStatusItemAction()
 
         presentationState.onModeChange = { [weak self] in

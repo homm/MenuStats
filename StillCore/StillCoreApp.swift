@@ -722,10 +722,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 ContentView(presentationState: presentationState)
             },
             statusItemMenu: statusItemMenu,
-            configureWindow: { window in
+            configureWindow: { window, presentationMode in
                 window.title = AppPresentation.floatingWindowTitle
                 window.setContentSize(AppPresentation.windowMinSize)
-                window.minSize = AppPresentation.windowMinSize
+
+                switch presentationMode {
+                case .attached:
+                    window.contentMinSize = AppPresentation.windowMinSize
+                case .floating:
+                    window.minSize = AppPresentation.windowMinSize
+                }
             }
         )
 
