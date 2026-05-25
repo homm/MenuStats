@@ -577,17 +577,25 @@ struct ContentView: View {
 
             HStack(spacing: 8) {
                 if let batteryState = batteryTrackerService.runtimeState {
-                    HStack(spacing: 4) {
-                        Image(nsImage: BatteryIndicatorImage.make(
-                            state: batteryState,
-                            usesSecondaryMask: false
-                        ))
-                            .foregroundStyle(.secondary)
-                            .padding(.vertical, -2)
-                        Text("\(Int(batteryState.currentPercent.rounded()))%")
-                            .foregroundStyle(.secondary)
-                            .font(Font(AppFonts.batteryPercent))
+                    Button {
+                        batteryTrackerService.openBatterySettings()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(nsImage: BatteryIndicatorImage.make(
+                                state: batteryState,
+                                usesSecondaryMask: false
+                            ))
+                                .padding(.vertical, -1)
+                                .foregroundStyle(.secondary)
+                            Text("\(Int(batteryState.currentPercent.rounded()))%")
+                                .foregroundStyle(.secondary)
+                                .font(Font(AppFonts.batteryPercent))
+                        }
                     }
+                        .buttonStyle(AccessoryLikeButtonStyle())
+                        .help("Open Battery settings")
+                        .padding(.leading, -2)
+                        .padding(.vertical, -1)
                 }
 
                 if let actionTitle = batteryTrackerService.actionTitle {

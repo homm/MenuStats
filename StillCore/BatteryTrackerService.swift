@@ -245,6 +245,13 @@ final class BatteryTrackerService: ObservableObject {
         NSWorkspace.shared.open(url)
     }
 
+    func openBatterySettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.Battery-Settings.extension") else {
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+
     private func startPolling() {
         timer = Timer.scheduledTimer(withTimeInterval: Self.refreshInterval, repeats: true) {
             [weak self] _ in
