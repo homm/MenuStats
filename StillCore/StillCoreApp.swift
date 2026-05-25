@@ -471,6 +471,7 @@ struct ContentView: View {
     @ObservedObject private var batteryTrackerService = BatteryTrackerService.shared
     @ObservedObject var presentationState: MenuPresentationState
     @State private var highlightedChartSampleX: Double?
+    @State private var isBatteryTrackerPopoverPresented = false
 
     var body: some View {
         VStack(spacing: 8) {
@@ -598,33 +599,53 @@ struct ContentView: View {
                         .padding(.vertical, -1)
                 }
 
-                if let actionTitle = batteryTrackerService.actionTitle {
-                    Text("Battery tracker:")
-                    if batteryTrackerService.installState != .requiresApproval {
-                        Text(batteryTrackerService.runtimeLabel)
+                Text(batteryTrackerService.statusText)
+                    .textSelection(.enabled)
+                    .foregroundStyle(.secondary)
+
+                if batteryTrackerService.actionTitle != nil {
+                    Button {
+                        isBatteryTrackerPopoverPresented.toggle()
+                    } label: {
+                        Image(systemName: "exclamationmark.circle")
+                            .font(AppFonts.helpIcon)
                             .foregroundStyle(.secondary)
                     }
-                    Spacer()
-                    Button(actionTitle) {
-                        batteryTrackerService.performPrimaryAction()
+                    .buttonStyle(.plain)
+                    .help("Battery tracker")
+                    .popover(isPresented: $isBatteryTrackerPopoverPresented, arrowEdge: .bottom) {
+                        BatteryTrackerPopover(service: batteryTrackerService)
                     }
-                } else {
-                    Text(batteryTrackerService.statusText)
-                        .textSelection(.enabled)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-
-                if batteryTrackerService.actionTitle == nil && !batteryTrackerService.lastErrorMessage.isEmpty {
-                    Text(batteryTrackerService.lastErrorMessage)
-                        .textSelection(.enabled)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                Spacer()
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private struct BatteryTrackerPopover: View {
+        @ObservedObject var service: BatteryTrackerService
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(service.runtimeLabel)
+                    .foregroundStyle(.secondary)
+
+                if !service.lastErrorMessage.isEmpty {
+                    Text(service.lastErrorMessage)
+                        .textSelection(.enabled)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let actionTitle = service.actionTitle {
+                    Button(actionTitle) {
+                        service.performPrimaryAction()
+                    }
+                }
+            }
+            .padding(12)
+        }
     }
 
     private var intervalLabel: AttributedString {
@@ -664,10 +685,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusItemMenu = NSMenu()
     private var statusItemController: StatusItemController?
     private let restartHelperArgument = "--helper-restart"
+    private let uninstallHelperArgument = "--helper-uninstall"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if CommandLine.arguments.contains(restartHelperArgument) {
             BatteryTrackerService.shared.restartHelper()
+            NSApp.terminate(nil)
+            return
+        }
+
+        if CommandLine.arguments.contains(uninstallHelperArgument) {
+            BatteryTrackerService.shared.uninstallHelper()
             NSApp.terminate(nil)
             return
         }

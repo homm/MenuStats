@@ -2,6 +2,7 @@ NAME := StillCore
 LOCAL ?=
 WORKSPACE ?=
 CONFIGURATION ?= Debug
+DESTINATION ?= platform=macOS,arch=arm64
 DEVELOPMENT_TEAM ?=
 NOTARY_PROFILE ?= $(NAME)-Notarization
 DERIVED_DATA := .build
@@ -49,6 +50,7 @@ help:
 		'  DEVELOPMENT_TEAM=... Team id passed to xcodebuild signing settings' \
 		'  NOTARY_PROFILE=... Keychain profile for notarytool (default: $(NOTARY_PROFILE))' \
 		'make helper-restart Build app and restart battery helper' \
+		'make helper-uninstall Build app and uninstall battery helper' \
 		'make profile        Build $(NAME) and launch xctrace Time Profiler' \
 		'make benchmarks     Run charts benchmarks' \
 		'make clean          Remove .build'
@@ -57,6 +59,7 @@ help:
 app:
 	xcodebuild $(XCODE_CONTAINER) build \
 	-scheme $(NAME) -configuration $(CONFIGURATION) \
+	-destination '$(DESTINATION)' \
 	-derivedDataPath $(DERIVED_DATA) \
 	$(XCODEBUILD_FLAGS)
 
@@ -106,6 +109,10 @@ open-app: app
 .PHONY: helper-restart
 helper-restart: app
 	"$(APP_EXEC_PATH)" --helper-restart
+
+.PHONY: helper-uninstall
+helper-uninstall: app
+	"$(APP_EXEC_PATH)" --helper-uninstall
 
 .PHONY: benchmarks
 benchmarks:

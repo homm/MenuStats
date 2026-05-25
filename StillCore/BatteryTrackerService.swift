@@ -177,14 +177,18 @@ final class BatteryTrackerService: ObservableObject {
     var runtimeLabel: String {
         switch installState {
         case .notInstalled:
-            return "Helper not installed"
+            return "Battery tracker is not installed"
         case .requiresApproval:
             return "Helper requires approval"
         case .installed:
-            guard let batteryTrackerState = runtimeState?.batteryTrackerState else { return "Helper not running" }
+            guard let batteryTrackerState = runtimeState?.batteryTrackerState else {
+                return "Battery tracker is not running"
+            }
 
             let heartbeatAge = Date().timeIntervalSince(batteryTrackerState.heartbeatAt)
-            guard heartbeatAge <= BatteryTrackerConstants.heartbeatTimeout else { return "Helper not running" }
+            guard heartbeatAge <= BatteryTrackerConstants.heartbeatTimeout else {
+                return "Battery tracker is not running"
+            }
 
             if batteryTrackerState.lastError != nil {
                 return "Helper running with errors"
@@ -219,10 +223,13 @@ final class BatteryTrackerService: ObservableObject {
     var actionTitle: String? {
         switch installState {
         case .notInstalled:
-            return "Install Helper"
+            return "Install"
         case .requiresApproval:
-            return "Enable in System Settings"
+            return "Open System Settings"
         case .installed:
+            if !lastErrorMessage.isEmpty {
+                return "Restart Helper"
+            }
             return isHelperRunning ? nil : "Start Helper"
         }
     }
