@@ -6,6 +6,7 @@ import MacmonSwift
 enum AppSettings {
     static let defaultMetricsIntervalMs = 2000
     private static let metricsIntervalKey = "metricsIntervalMs"
+    private static let frequencyUsageByCoresKey = "frequencyUsageByCores"
     private static let statusItemDisplayModeKey = "statusItemDisplayMode"
 
     static var metricsIntervalMs: Int {
@@ -26,6 +27,15 @@ enum AppSettings {
             UserDefaults.standard.set(newValue, forKey: statusItemDisplayModeKey)
         }
     }
+
+    static var frequencyUsageByCores: Bool {
+        get {
+            UserDefaults.standard.bool(forKey: frequencyUsageByCoresKey)
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: frequencyUsageByCoresKey)
+        }
+    }
 }
 
 enum AppPresentation {
@@ -33,7 +43,7 @@ enum AppPresentation {
     static let statusItemSystemImageName = "chart.bar.xaxis"
     static let statusItemToolTip = "StillCore"
     static let floatingWindowTitle = "StillCore"
-    static let chartHistoryCapacity = 180
+    static let chartHistoryCapacity = 200
 }
 
 enum FormatLocale {
@@ -176,6 +186,12 @@ final class AppDependencies: ObservableObject {
     @Published var metricsIntervalMs: Int = AppSettings.metricsIntervalMs {
         didSet {
             AppSettings.metricsIntervalMs = metricsIntervalMs
+        }
+    }
+
+    @Published var frequencyUsageByCores: Bool = AppSettings.frequencyUsageByCores {
+        didSet {
+            AppSettings.frequencyUsageByCores = frequencyUsageByCores
         }
     }
 
@@ -379,6 +395,7 @@ When usage is at 100%, the area reaches the line.
                 index % MetricsChartPalette.cpuFrequencyPalette.count
             ]
             let group = "cpu.\(index)"
+            let coreCount = cpuChartCoreCount(index: index)
 
             return [
                 MetricsSeriesDescriptor(
@@ -402,7 +419,11 @@ When usage is at 100%, the area reaches the line.
                     detailsValue: { metrics in
                         Double(metrics.cpu_usage[index].usage)
                     },
-                    detailsFormatter: Formatters.usage,
+                    detailsFormatter: { usage in
+                        Formatters.usage(
+                            usage * (AppDependencies.shared.frequencyUsageByCores ? coreCount : 1)
+                        )
+                    },
                     detailsGroup: group
                 ),
             ]
@@ -454,6 +475,13 @@ When usage is at 100%, the area reaches the line.
             let minimumFrequency = domains[index].frequenciesMHz.first
         else { return frequency }
         return minimumFrequency
+    }
+
+    private static func cpuChartCoreCount(index: Int) -> Double {
+        guard let domains = AppDependencies.shared.socInfo?.cpuDomains,
+            domains.indices.contains(index)
+        else { return 1 }
+        return Double(domains[index].units)
     }
 
     private static func gpuChartFrequencyMHz(_ metrics: Metrics, index: Int) -> UInt32 {
@@ -555,7 +583,15 @@ struct ContentView: View {
                             metricsPublisher: dependencies.metricsPublisher,
                             capacity: AppPresentation.chartHistoryCapacity,
                             showUpdates: presentationState.isWindowVisible,
-                            highlightedSampleX: $highlightedChartSampleX
+                            highlightedSampleX: $highlightedChartSampleX,
+                            settingsInvalidationKey: AnyHashable(dependencies.frequencyUsageByCores),
+                            settingsView: AnyView(
+                                Toggle(
+                                    "CPU usage by cores",
+                                    isOn: $dependencies.frequencyUsageByCores
+                                )
+                                    .padding(12)
+                            )
                         )
                             .frame(height: metrics.size.height * 0.35)
                             .background(backgroundColor)

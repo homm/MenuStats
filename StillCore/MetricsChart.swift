@@ -462,6 +462,7 @@ private struct MetricsDGChartView: NSViewRepresentable {
     let yStart: Double
     let yAxisLabelCount: Int
     let showsSampleTime: Bool
+    let settingsInvalidationKey: AnyHashable
     @Binding var highlightedSampleX: Double?
 
     final class Coordinator: NSObject, ChartViewDelegate {
@@ -631,10 +632,13 @@ struct MetricsChartSection: View {
     @Binding var highlightedSampleX: Double?
     let yAxisLabelCount: Int
     let yStart: Double
+    let settingsInvalidationKey: AnyHashable
+    private let settingsView: AnyView?
     // The chart store owns the long-lived chart data/controller state for this section.
     // It must be created once per section instance and survive SwiftUI body recomputation.
     @StateObject private var store: MetricsChartStore
     @State private var isHelpPresented = false
+    @State private var isSettingsPresented = false
     @State private var yMaxResetRevision = 0
 
     // The section initializer receives the chart definition and the shared metrics stream,
@@ -646,7 +650,9 @@ struct MetricsChartSection: View {
         showUpdates: Bool,
         highlightedSampleX: Binding<Double?>,
         yAxisLabelCount: Int = 5,
-        yStart: Double = 0.0
+        yStart: Double = 0.0,
+        settingsInvalidationKey: AnyHashable = AnyHashable(0),
+        settingsView: AnyView? = nil
     ) {
         self.definition = definition
         self.capacity = capacity
@@ -654,6 +660,8 @@ struct MetricsChartSection: View {
         self._highlightedSampleX = highlightedSampleX
         self.yAxisLabelCount = yAxisLabelCount
         self.yStart = yStart
+        self.settingsInvalidationKey = settingsInvalidationKey
+        self.settingsView = settingsView
         _store = StateObject(
             wrappedValue: MetricsChartStore(
                 definition: definition,
@@ -674,6 +682,7 @@ struct MetricsChartSection: View {
                     yStart: yStart,
                     yAxisLabelCount: yAxisLabelCount,
                     showsSampleTime: definition.showsSampleTime,
+                    settingsInvalidationKey: settingsInvalidationKey,
                     highlightedSampleX: $highlightedSampleX
                 )
             } else {
@@ -721,15 +730,28 @@ struct MetricsChartSection: View {
                     ChartHelpPopover(markdown: helpMarkdown)
                 }
             }
-            HStack {
+            if let settingsView {
+                Button {
+                    isSettingsPresented.toggle()
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(AppFonts.helpIcon)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .popover(isPresented: $isSettingsPresented, arrowEdge: .trailing) {
+                    settingsView
+                }
+            }
+            HStack(spacing: 3) {
                 Text(definition.unitLabel)
                     .foregroundStyle(.secondary)
                     .padding(.leading, 3)
-                Spacer()
             }
                 .frame(
                     width: MetricsCurrentValuesLayout.valuesColumnWidth +
-                        MetricsCurrentValuesLayout.labelsColumnWidth
+                        MetricsCurrentValuesLayout.labelsColumnWidth,
+                    alignment: .leading
                 )
         }
     }
