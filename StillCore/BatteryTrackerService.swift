@@ -51,9 +51,9 @@ struct BatteryRuntimeState {
 
 @MainActor
 final class BatteryTrackerService: ObservableObject {
-    private static let refreshInterval: TimeInterval = 5
     static let isBatteryAvailable = BatteryStatus.isAvailable
     static let shared = BatteryTrackerService(start: isBatteryAvailable)
+    private static let refreshInterval: TimeInterval = 3
     private static var currentHelperVersion: String {
         let infoDictionary = Bundle.main.infoDictionary
         return (infoDictionary?["CFBundleShortVersionString"] as? String)

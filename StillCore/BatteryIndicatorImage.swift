@@ -69,10 +69,10 @@ enum BatteryIndicatorImage {
             height: chargeStatusSymbolSize
         )
         switch state.chargeStatus {
-        case .charging, .charged:
+        case .charging:
             let chargePath = BatteryOverlaySymbol.bolt.path(in: chargeRect)
             drawOverlayMask(chargePath, strokeWidth: 2)
-        case .onHold:
+        case .onHold, .charged:
             let chargePath = BatteryOverlaySymbol.powerPlug.path(in: chargeRect)
             drawOverlayMask(chargePath, strokeWidth: 2)
         default:

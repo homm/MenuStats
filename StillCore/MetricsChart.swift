@@ -245,7 +245,7 @@ final class MetricsChartStore: ObservableObject {
 final class UpperBoundStabilizer {
     private(set) var current: Double = -.infinity
     private let clock = ContinuousClock()
-    private let retentionDuration: Duration = .seconds(15)
+    private let retentionDuration: Duration = .seconds(10)
     private var lastVisibleHeight: Double?
     private var retainedOffscreenHeight: Double?
     private var retainedOffscreenExpiresAt: ContinuousClock.Instant?
@@ -254,7 +254,7 @@ final class UpperBoundStabilizer {
     /// the upper bound is allowed to shrink.
     let shrinkThreshold: Double
 
-    /// Allowed significand steps in the [1, 10] decade.
+    /// Allowed significant steps in the [1, 10] decade.
     /// Example: with [1, 1.5, 2, 3, 5, 10],
     /// 112 -> 150, 0.112 -> 0.15, -112 -> -100, -0.112 -> -0.1.
     let steps: [Double]
@@ -328,6 +328,7 @@ final class MetricsLineChartView: LineChartView {
         steps: [1, 1.5, 2, 3, 4, 5, 6, 8, 10],
         spaceTop: 0.05
     )
+    var yMaxResetRevision = 0
     var series: [MetricsSeriesDescriptor] = []
     var clearHighlight: (() -> Void)?
     var onCurrentValuesRowMouseDown: ((MetricsDetailsBuilder.Row, Bool) -> Void)?
@@ -457,6 +458,7 @@ private struct MetricsDGChartView: NSViewRepresentable {
     let controller: ChartDataController
     let revision: Int
     let capacity: Int
+    let yMaxResetRevision: Int
     let yStart: Double
     let yAxisLabelCount: Int
     let showsSampleTime: Bool
@@ -569,6 +571,11 @@ private struct MetricsDGChartView: NSViewRepresentable {
             configureAxes(chartView)
         }
 
+        if chartView.yMaxResetRevision != yMaxResetRevision {
+            chartView.yMaxResetRevision = yMaxResetRevision
+            chartView.yMaxStabilizer.reset()
+        }
+
         chartView.data?.notifyDataChanged()
 
         configureAxisRanges(chartView)
@@ -628,6 +635,7 @@ struct MetricsChartSection: View {
     // It must be created once per section instance and survive SwiftUI body recomputation.
     @StateObject private var store: MetricsChartStore
     @State private var isHelpPresented = false
+    @State private var yMaxResetRevision = 0
 
     // The section initializer receives the chart definition and the shared metrics stream,
     // then creates a persistent store instance that subscribes to that stream exactly once.
@@ -662,6 +670,7 @@ struct MetricsChartSection: View {
                     controller: store.controller,
                     revision: store.chartRevision,
                     capacity: capacity,
+                    yMaxResetRevision: yMaxResetRevision,
                     yStart: yStart,
                     yAxisLabelCount: yAxisLabelCount,
                     showsSampleTime: definition.showsSampleTime,
@@ -682,9 +691,15 @@ struct MetricsChartSection: View {
         .overlay(alignment: .topLeading, content: headerView)
         .onAppear {
             store.setShowUpdates(showUpdates)
+            if showUpdates {
+                yMaxResetRevision += 1
+            }
         }
         .onChange(of: showUpdates) { _, newValue in
             store.setShowUpdates(newValue)
+            if newValue {
+                yMaxResetRevision += 1
+            }
         }
     }
 
