@@ -20,6 +20,15 @@ struct BatteryStatus {
     var isFullyCharged: Bool
     var powerSaveMode: Bool
 
+    static var isAvailable: Bool {
+        let entry = openBatteryEntry()
+        guard entry != IO_OBJECT_NULL else {
+            return false
+        }
+        defer { IOObjectRelease(entry) }
+        return boolProperty(entry: entry, key: "BatteryInstalled") == true
+    }
+
     static func read() throws -> BatteryStatus {
         let entry = openBatteryEntry()
         guard entry != IO_OBJECT_NULL else {
@@ -32,6 +41,7 @@ struct BatteryStatus {
                 ?? intProperty(entry: entry, key: "CurrentCapacity"),
             let maxCapacity = intProperty(entry: entry, key: "AppleRawMaxCapacity")
                 ?? intProperty(entry: entry, key: "MaxCapacity"),
+            boolProperty(entry: entry, key: "BatteryInstalled") == true,
             let isOnACPower = boolProperty(entry: entry, key: "ExternalConnected"),
             let isCharging = boolProperty(entry: entry, key: "IsCharging"),
             let isFullyCharged = boolProperty(entry: entry, key: "FullyCharged")

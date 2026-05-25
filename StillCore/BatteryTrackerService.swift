@@ -51,8 +51,9 @@ struct BatteryRuntimeState {
 
 @MainActor
 final class BatteryTrackerService: ObservableObject {
-    static let shared = BatteryTrackerService()
     private static let refreshInterval: TimeInterval = 5
+    static let isBatteryAvailable = BatteryStatus.isAvailable
+    static let shared = BatteryTrackerService(start: isBatteryAvailable)
     private static var currentHelperVersion: String {
         let infoDictionary = Bundle.main.infoDictionary
         return (infoDictionary?["CFBundleShortVersionString"] as? String)
@@ -74,7 +75,8 @@ final class BatteryTrackerService: ObservableObject {
     private var timer: Timer?
     private var pendingRefreshWorkItem: DispatchWorkItem?
 
-    private init() {
+    private init(start: Bool) {
+        guard start else { return }
         refreshAll()
         restartHelperIfVersionChanged()
         startPolling()

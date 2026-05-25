@@ -221,18 +221,24 @@ final class StatusItemController: NSObject {
     }
 
     private func makeStatusItemDisplayDescriptors(metrics: Metrics) -> [StatusItemDisplayDescriptor] {
-        var descriptors = [
-            .icon,
-            StatusItemDisplayDescriptor(
-                displayName: "Battery percent",
-                persistenceValue: "batteryPercent",
-                source: .batteryStatus(formatStatusItemBatteryPercent)
-            ),
-            StatusItemDisplayDescriptor(
-                displayName: "Battery icon",
-                persistenceValue: "batteryIcon",
-                source: .batteryIcon
-            ),
+        var descriptors = [StatusItemDisplayDescriptor.icon]
+
+        if BatteryTrackerService.isBatteryAvailable {
+            descriptors += [
+                StatusItemDisplayDescriptor(
+                    displayName: "Battery percent",
+                    persistenceValue: "batteryPercent",
+                    source: .batteryStatus(formatStatusItemBatteryPercent)
+                ),
+                StatusItemDisplayDescriptor(
+                    displayName: "Battery icon",
+                    persistenceValue: "batteryIcon",
+                    source: .batteryIcon
+                ),
+            ]
+        }
+
+        descriptors += [
             StatusItemDisplayDescriptor(
                 displayName: "System power",
                 persistenceValue: "systemPower",

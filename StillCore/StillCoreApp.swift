@@ -576,52 +576,61 @@ struct ContentView: View {
                 }
             }
 
-            HStack(spacing: 8) {
-                if let batteryState = batteryTrackerService.runtimeState {
-                    Button {
-                        batteryTrackerService.openBatterySettings()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(nsImage: BatteryIndicatorImage.make(
-                                state: batteryState,
-                                usesSecondaryMask: false
-                            ))
-                                .padding(.vertical, -1)
+            if BatteryTrackerService.isBatteryAvailable {
+                HStack(spacing: 8) {
+                    if let batteryState = batteryTrackerService.runtimeState {
+                        Button {
+                            batteryTrackerService.openBatterySettings()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(nsImage: BatteryIndicatorImage.make(
+                                    state: batteryState,
+                                    usesSecondaryMask: false
+                                ))
+                                    .padding(.vertical, -1)
+                                    .foregroundStyle(.secondary)
+                                Text("\(Int(batteryState.currentPercent.rounded()))%")
+                                    .foregroundStyle(.secondary)
+                                    .font(Font(AppFonts.batteryPercent))
+                            }
+                        }
+                            .buttonStyle(AccessoryLikeButtonStyle())
+                            .help("Open Battery settings")
+                            .padding(.leading, -2)
+                            .padding(.vertical, -1)
+                    }
+
+                    Text(batteryTrackerService.statusText)
+                        .textSelection(.enabled)
+                        .foregroundStyle(.secondary)
+
+                    if batteryTrackerService.actionTitle != nil {
+                        Button {
+                            isBatteryTrackerPopoverPresented.toggle()
+                        } label: {
+                            Image(systemName: "exclamationmark.circle")
+                                .font(AppFonts.helpIcon)
                                 .foregroundStyle(.secondary)
-                            Text("\(Int(batteryState.currentPercent.rounded()))%")
-                                .foregroundStyle(.secondary)
-                                .font(Font(AppFonts.batteryPercent))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Battery tracker")
+                        .popover(isPresented: $isBatteryTrackerPopoverPresented, arrowEdge: .bottom) {
+                            BatteryTrackerPopover(service: batteryTrackerService)
                         }
                     }
-                        .buttonStyle(AccessoryLikeButtonStyle())
-                        .help("Open Battery settings")
-                        .padding(.leading, -2)
-                        .padding(.vertical, -1)
+                    Spacer()
                 }
-
-                Text(batteryTrackerService.statusText)
-                    .textSelection(.enabled)
-                    .foregroundStyle(.secondary)
-
-                if batteryTrackerService.actionTitle != nil {
-                    Button {
-                        isBatteryTrackerPopoverPresented.toggle()
-                    } label: {
-                        Image(systemName: "exclamationmark.circle")
-                            .font(AppFonts.helpIcon)
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Battery tracker")
-                    .popover(isPresented: $isBatteryTrackerPopoverPresented, arrowEdge: .bottom) {
-                        BatteryTrackerPopover(service: batteryTrackerService)
-                    }
-                }
-                Spacer()
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .bottom) {
+            if !BatteryTrackerService.isBatteryAvailable {
+                Color(.textBackgroundColor)
+                    .frame(height: 12)
+                    .allowsHitTesting(false)
+            }
+        }
     }
 
     private struct BatteryTrackerPopover: View {
