@@ -471,10 +471,11 @@ struct ContentView: View {
     @ObservedObject private var batteryTrackerService = BatteryTrackerService.shared
     @ObservedObject var presentationState: MenuPresentationState
     @State private var highlightedChartSampleX: Double?
+    @State private var isBatteryTrackerPopoverPresented = false
 
     var body: some View {
         VStack(spacing: 8) {
-            HStack {
+            HStack(spacing: 8) {
                 Text(dependencies.chipName ?? AppPresentation.floatingWindowTitle)
                     .font(.headline)
                 Text(dependencies.socSummary)
@@ -498,14 +499,19 @@ struct ContentView: View {
                     }
                         .keyboardShortcut("=", modifiers: [])
                 } label: {
-                    (Text(Image(systemName: "clock.arrow.circlepath"))
-                    + Text(intervalLabel))
-                        .font(Font(AppFonts.intervalMenuLabel))
-                        .foregroundStyle(.primary)
+                    HStack(spacing: 0) {
+                        Image(systemName: "clock.arrow.circlepath")
+                        Text(intervalLabel)
+                            .font(Font(AppFonts.intervalMenuLabel))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .semibold))
+                            .offset(y: 1)
+                            .padding(.leading, 2)
+                    }
                 }
-                    .menuStyle(.button)
-                    .buttonStyle(.accessoryBar)
+                    .buttonStyle(AccessoryLikeButtonStyle())
                     .help("Update interval")
+                    .padding(.trailing, 4)
                 Button {
                     presentationState.setPresentationMode(
                         presentationState.mode == .attached ? .floating : .attached)
@@ -571,43 +577,75 @@ struct ContentView: View {
             }
 
             HStack(spacing: 8) {
-                if let actionTitle = batteryTrackerService.actionTitle {
-
-                    Text("Battery tracker:")
-                    if batteryTrackerService.installState != .requiresApproval {
-                        Text(batteryTrackerService.runtimeLabel)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button(actionTitle) {
-                        batteryTrackerService.performPrimaryAction()
-                    }
-                } else {
-                    if let currentPercent = batteryTrackerService.runtimeState?.lastComputedStatus?.currentPercent {
+                if let batteryState = batteryTrackerService.runtimeState {
+                    Button {
+                        batteryTrackerService.openBatterySettings()
+                    } label: {
                         HStack(spacing: 4) {
-                            BatteryIndicatorView(percent: currentPercent)
+                            Image(nsImage: BatteryIndicatorImage.make(
+                                state: batteryState,
+                                usesSecondaryMask: false
+                            ))
+                                .padding(.vertical, -1)
                                 .foregroundStyle(.secondary)
-                            Text("\(currentPercent)%")
+                            Text("\(Int(batteryState.currentPercent.rounded()))%")
                                 .foregroundStyle(.secondary)
                                 .font(Font(AppFonts.batteryPercent))
                         }
                     }
-                    Text(batteryTrackerService.statusText)
-                        .textSelection(.enabled)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .buttonStyle(AccessoryLikeButtonStyle())
+                        .help("Open Battery settings")
+                        .padding(.leading, -2)
+                        .padding(.vertical, -1)
                 }
 
-                if batteryTrackerService.actionTitle == nil && !batteryTrackerService.lastErrorMessage.isEmpty {
-                    Text(batteryTrackerService.lastErrorMessage)
-                        .textSelection(.enabled)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                Text(batteryTrackerService.statusText)
+                    .textSelection(.enabled)
+                    .foregroundStyle(.secondary)
+
+                if batteryTrackerService.actionTitle != nil {
+                    Button {
+                        isBatteryTrackerPopoverPresented.toggle()
+                    } label: {
+                        Image(systemName: "exclamationmark.circle")
+                            .font(AppFonts.helpIcon)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Battery tracker")
+                    .popover(isPresented: $isBatteryTrackerPopoverPresented, arrowEdge: .bottom) {
+                        BatteryTrackerPopover(service: batteryTrackerService)
+                    }
                 }
+                Spacer()
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private struct BatteryTrackerPopover: View {
+        @ObservedObject var service: BatteryTrackerService
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(service.runtimeLabel)
+                    .foregroundStyle(.secondary)
+
+                if !service.lastErrorMessage.isEmpty {
+                    Text(service.lastErrorMessage)
+                        .textSelection(.enabled)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let actionTitle = service.actionTitle {
+                    Button(actionTitle) {
+                        service.performPrimaryAction()
+                    }
+                }
+            }
+            .padding(12)
+        }
     }
 
     private var intervalLabel: AttributedString {
@@ -641,56 +679,23 @@ struct ContentView: View {
     ]
 }
 
-private struct BatteryIndicatorView: View {
-    let percent: Int
-    private let bodyWidth: CGFloat = 24
-    private let bodyHeight: CGFloat = 12
-    private let bodyInset: CGFloat = 2
-
-    var body: some View {
-        let clampedPercent = min(max(percent, 0), 100)
-        let fillWidth = max(bodyWidth - bodyInset * 2, 0) * CGFloat(clampedPercent) / 100
-
-        HStack(spacing: 1) {
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 3)
-                    .strokeBorder(style: StrokeStyle(lineWidth: 1))
-
-                RoundedRectangle(cornerRadius: 1.5)
-                    .frame(width: fillWidth)
-                    .padding(bodyInset)
-            }
-            .frame(width: bodyWidth, height: bodyHeight)
-
-            Circle()
-                .frame(width: 6, height: 6)
-                .frame(width: 2, height: 6, alignment: .trailing)
-                .clipped()
-        }
-    }
-}
-
-@MainActor
-private struct StatusItemDisplayDescriptor {
-    let displayName: String
-    let persistenceValue: String
-    let getValue: (Metrics) -> Double?
-    let formatValue: (Double) -> String
-}
-
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var presentationController: MenuPresentationController<ContentView>?
-    private var statusMetricsSubscription: AnyCancellable?
     private let statusItemMenu = NSMenu()
-    private var lastMetrics: Metrics?
-    private var statusItemDisplayDescriptors: [StatusItemDisplayDescriptor] = []
-    private var selectedStatusItemDisplayPersistenceValue = AppSettings.statusItemDisplayMode ?? "icon"
+    private var statusItemController: StatusItemController?
     private let restartHelperArgument = "--helper-restart"
+    private let uninstallHelperArgument = "--helper-uninstall"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if CommandLine.arguments.contains(restartHelperArgument) {
             BatteryTrackerService.shared.restartHelper()
+            NSApp.terminate(nil)
+            return
+        }
+
+        if CommandLine.arguments.contains(uninstallHelperArgument) {
+            BatteryTrackerService.shared.uninstallHelper()
             NSApp.terminate(nil)
             return
         }
@@ -703,18 +708,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         quitItem.target = self
         statusItemMenu.addItem(quitItem)
 
-        presentationController = MenuPresentationController(
+        let presentationController = MenuPresentationController(
             content: { presentationState in
                 ContentView(presentationState: presentationState)
             },
             statusItemMenu: statusItemMenu,
-            configureStatusItem: { statusItem in
-                guard let button = statusItem.button else { return }
-                button.image = nil
-                button.font = AppFonts.statusItemButton
-                button.toolTip = AppPresentation.statusItemToolTip
-                self.applyStatusItemDisplay(metrics: nil, to: statusItem)
-            },
             configureWindow: { window in
                 window.title = AppPresentation.floatingWindowTitle
                 window.setContentSize(AppPresentation.windowMinSize)
@@ -722,215 +720,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         )
 
-        statusMetricsSubscription = AppDependencies.shared.metricsPublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] metrics in
-                self?.updateStatusItem(with: metrics)
-            }
-    }
-
-    private func updateStatusItem(with metrics: Metrics) {
-        guard let statusItem = presentationController?.statusItem else { return }
-        lastMetrics = metrics
-        if statusItemDisplayDescriptors.isEmpty {
-            buildStatusItemMenu(with: metrics)
-        }
-        let sanitizedPersistenceValue = sanitizedPersistenceValue(selectedStatusItemDisplayPersistenceValue)
-        if selectedStatusItemDisplayPersistenceValue != sanitizedPersistenceValue {
-            selectedStatusItemDisplayPersistenceValue = sanitizedPersistenceValue
-            AppSettings.statusItemDisplayMode = selectedStatusItemDisplayPersistenceValue
-            updateStatusItemMenuSelection()
-        }
-        applyStatusItemDisplay(metrics: metrics, to: statusItem)
-    }
-
-    private func formatStatusItemPower(_ value: Double) -> String {
-        String(format: "%4.1f W", locale: FormatLocale.posix, value)
-    }
-
-    private func formatStatusItemTemperature(_ value: Double) -> String {
-        String(format: "%2.0f °C", locale: FormatLocale.posix, value)
-    }
-
-    private func formatStatusItemUsage(_ value: Double) -> String {
-        String(format: "%4.1f%%", locale: FormatLocale.posix, value * 100.0)
-    }
-
-    private func formatStatusItemFrequency(_ valueGHz: Double) -> String {
-        String(format: "%4.2f GHz", locale: FormatLocale.posix, valueGHz)
-    }
-
-    private func formatStatusItemMemoryGb(_ valueGb: Double) -> String {
-        String(format: "%4.1f Gb", locale: FormatLocale.posix, valueGb)
-    }
-
-    private func buildStatusItemMenu(with metrics: Metrics) {
-        statusItemDisplayDescriptors = makeStatusItemDisplayDescriptors(metrics: metrics)
-        statusItemMenu.insertItem(.separator(), at: 0)
-        for descriptor in statusItemDisplayDescriptors.reversed() {
-            let item = NSMenuItem(
-                title: descriptor.displayName,
-                action: #selector(selectStatusItemDisplayMode(_:)),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.representedObject = descriptor.persistenceValue
-            statusItemMenu.insertItem(item, at: 0)
-        }
-        updateStatusItemMenuSelection()
-    }
-
-    private func applyStatusItemDisplay(metrics: Metrics?, to statusItem: NSStatusItem) {
-        if
-            let metrics,
-            let descriptor = selectedStatusItemDisplayDescriptor,
-            let value = descriptor.getValue(metrics)
-        {
-            applyStatusItemTitle(descriptor.formatValue(value), to: statusItem)
-        } else {
-            applyStatusItemIcon(to: statusItem)
-        }
-    }
-
-    private func applyStatusItemIcon(to statusItem: NSStatusItem) {
-        guard let button = statusItem.button else { return }
-        if button.image != nil && button.title.isEmpty {
-            return
-        }
-        let image = NSImage(
-            systemSymbolName: AppPresentation.statusItemSystemImageName,
-            accessibilityDescription: AppPresentation.statusItemToolTip
+        self.presentationController = presentationController
+        statusItemController = StatusItemController(
+            statusItem: presentationController.statusItem,
+            menu: statusItemMenu
         )
-        image?.isTemplate = true
-        button.image = image
-        button.title = ""
-    }
-
-    private func applyStatusItemTitle(_ title: String, to statusItem: NSStatusItem) {
-        guard let button = statusItem.button else { return }
-        let leadingSpaces = title.prefix { $0 == " " }
-        let remainingTitle = title.dropFirst(leadingSpaces.count).replacingOccurrences(of: " ", with: "\u{2006}")
-        let displayTitle = String(repeating: "\u{2007}", count: leadingSpaces.count) + remainingTitle
-        if button.image != nil {
-            button.image = nil
-        }
-        if button.title != displayTitle {
-            button.title = displayTitle
-        }
-    }
-
-    private func sanitizedPersistenceValue(_ persistenceValue: String) -> String {
-        statusItemDisplayDescriptors.contains { $0.persistenceValue == persistenceValue } ? persistenceValue : "icon"
-    }
-
-    private func updateStatusItemMenuSelection() {
-        for item in statusItemMenu.items {
-            guard let persistenceValue = item.representedObject as? String else { continue }
-            item.state = persistenceValue == selectedStatusItemDisplayPersistenceValue ? .on : .off
-        }
-    }
-
-    @objc private func selectStatusItemDisplayMode(_ sender: NSMenuItem) {
-        guard let persistenceValue = sender.representedObject as? String else { return }
-
-        selectedStatusItemDisplayPersistenceValue = sanitizedPersistenceValue(persistenceValue)
-        AppSettings.statusItemDisplayMode = selectedStatusItemDisplayPersistenceValue
-        updateStatusItemMenuSelection()
-
-        guard let statusItem = presentationController?.statusItem else { return }
-        applyStatusItemDisplay(metrics: lastMetrics, to: statusItem)
-    }
-
-    private var selectedStatusItemDisplayDescriptor: StatusItemDisplayDescriptor? {
-        statusItemDisplayDescriptors.first { $0.persistenceValue == selectedStatusItemDisplayPersistenceValue }
-    }
-
-    private func makeStatusItemDisplayDescriptors(metrics: Metrics) -> [StatusItemDisplayDescriptor] {
-        var descriptors = [
-            StatusItemDisplayDescriptor(
-                displayName: "Icon",
-                persistenceValue: "icon",
-                getValue: { _ in nil },
-                formatValue: { _ in "" }
-            ),
-            StatusItemDisplayDescriptor(
-                displayName: "System power",
-                persistenceValue: "systemPower",
-                getValue: { metrics in Double(metrics.power.board) },
-                formatValue: formatStatusItemPower
-            ),
-            StatusItemDisplayDescriptor(
-                displayName: "Chip power",
-                persistenceValue: "chipPower",
-                getValue: { metrics in Double(metrics.power.package) },
-                formatValue: formatStatusItemPower
-            ),
-            StatusItemDisplayDescriptor(
-                displayName: "Temperature",
-                persistenceValue: "maxTemperature",
-                getValue: { metrics in Double(max(metrics.temperature.cpuAverage, metrics.temperature.gpuAverage)) },
-                formatValue: formatStatusItemTemperature
-            ),
-            StatusItemDisplayDescriptor(
-                displayName: "CPU load",
-                persistenceValue: "totalCpuLoad",
-                getValue: { metrics in
-                    let totalUnits = metrics.cpu_usage.reduce(0) { $0 + Int($1.units) }
-                    let weightedUsage = metrics.cpu_usage.reduce(0 as Float) { $0 + ($1.usage * Float($1.units)) }
-                    return totalUnits > 0 ? Double(weightedUsage / Float(totalUnits)) : 0
-                },
-                formatValue: formatStatusItemUsage
-            ),
-        ]
-
-        descriptors += metrics.cpu_usage.enumerated().flatMap { index, cluster in
-            [
-                StatusItemDisplayDescriptor(
-                    displayName: "\(cluster.name) load",
-                    persistenceValue: "cpuClusterLoad:\(index)",
-                    getValue: { metrics in
-                        guard metrics.cpu_usage.indices.contains(index) else { return nil }
-                        return Double(metrics.cpu_usage[index].usage)
-                    },
-                    formatValue: formatStatusItemUsage
-                ),
-                StatusItemDisplayDescriptor(
-                    displayName: "\(cluster.name) frequency",
-                    persistenceValue: "cpuClusterFrequency:\(index)",
-                    getValue: { metrics in
-                        guard metrics.cpu_usage.indices.contains(index) else { return nil }
-                        return Double(metrics.cpu_usage[index].frequencyMHz) / 1000.0
-                    },
-                    formatValue: formatStatusItemFrequency
-                ),
-            ]
-        }
-
-        descriptors += [
-            StatusItemDisplayDescriptor(
-                displayName: "RAM used",
-                persistenceValue: "ramUsed",
-                getValue: { metrics in Double(metrics.memory.ramUsage) / 1_073_741_824.0 },
-                formatValue: formatStatusItemMemoryGb
-            ),
-            StatusItemDisplayDescriptor(
-                displayName: "RAM load",
-                persistenceValue: "ramLoad",
-                getValue: { metrics in
-                    guard metrics.memory.ramTotal > 0 else { return 0 }
-                    return Double(metrics.memory.ramUsage) / Double(metrics.memory.ramTotal)
-                },
-                formatValue: formatStatusItemUsage
-            ),
-            StatusItemDisplayDescriptor(
-                displayName: "Swap used",
-                persistenceValue: "swapUsed",
-                getValue: { metrics in Double(metrics.memory.swapUsage) / 1_073_741_824.0 },
-                formatValue: formatStatusItemMemoryGb
-            ),
-        ]
-
-        return descriptors
     }
 
     @objc private func showAboutPanel() {

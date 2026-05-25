@@ -1,10 +1,44 @@
 import Foundation
 
-struct BatteryTrackerStateStore {
+enum BatteryTrackerConstants {
+    private static let helperBundleIdentifierSuffix = ".BatteryTrackerHelper"
+
+    static var launchAgentLabel: String {
+        return "\(stateDirectoryName).BatteryTracker"
+    }
+    static let launchAgentPlistName = "com.github.homm.StillCore.BatteryTracker.plist"
+    static var stateDirectoryName: String {
+        let bundleIdentifier = Bundle.main.bundleIdentifier ?? "com.github.homm.StillCore"
+        if bundleIdentifier.hasSuffix(helperBundleIdentifierSuffix) {
+            return String(bundleIdentifier.dropLast(helperBundleIdentifierSuffix.count))
+        }
+        return bundleIdentifier
+    }
+    static let stateFilename = "battery-tracker-state.json"
+    static let heartbeatTimeout: TimeInterval = 15
+}
+
+struct BatteryTrackerSession: Codable {
+    var startedAt: Date
+    var startCapacityMah: Int
+    var sleepSeconds: Int
+    var lastCheckAt: Date
+}
+
+struct BatteryTrackerState: Codable {
+    var schemaVersion: Int = 2
+    var helperVersion: String = ""
+    var pid: Int32 = 0
+    var heartbeatAt: Date = .distantPast
+    var session: BatteryTrackerSession?
+    var lastError: String?
+}
+
+struct BatterySessionStore {
     private let fileManager: FileManager = .default
     let fileURL: URL
 
-    init(fileURL: URL = BatteryTrackerStateStore.defaultFileURL()) {
+    init(fileURL: URL = BatterySessionStore.defaultFileURL()) {
         self.fileURL = fileURL
     }
 

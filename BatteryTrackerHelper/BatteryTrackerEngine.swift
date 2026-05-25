@@ -1,50 +1,14 @@
 import Foundation
-import IOKit
-
-private enum BatteryTrackerEngineError: LocalizedError {
-    case unavailable
-
-    var errorDescription: String? {
-        switch self {
-        case .unavailable:
-            return "Battery information is unavailable."
-        }
-    }
-}
-
-private struct BatterySnapshot {
-    var currentCapacityMah: Int
-    var maxCapacityMah: Int
-    var isOnACPower: Bool
-    var isCharging: Bool
-    var isFullyCharged: Bool
-
-    var currentPercent: Int {
-        guard maxCapacityMah > 0 else { return 0 }
-        return Int((Double(currentCapacityMah) * 100.0 / Double(maxCapacityMah)).rounded())
-    }
-
-    var powerSource: BatteryPowerSource {
-        isOnACPower ? .ac : .battery
-    }
-
-    var chargeStatus: BatteryChargeStatus {
-        guard isOnACPower else { return .discharging }
-        if isCharging { return .charging }
-        if isFullyCharged { return .charged }
-        return .onHold
-    }
-}
 
 struct BatteryTrackerEngine {
     private static let pollInterval: TimeInterval = 5
     private static let sleepThreshold: TimeInterval = 10
 
-    private let store: BatteryTrackerStateStore
+    private let store: BatterySessionStore
     private let helperVersion: String
 
     init(
-        store: BatteryTrackerStateStore = BatteryTrackerStateStore(),
+        store: BatterySessionStore = BatterySessionStore(),
         helperVersion: String = BatteryTrackerEngine.defaultHelperVersion()
     ) {
         self.store = store
@@ -58,8 +22,8 @@ struct BatteryTrackerEngine {
 
                 do {
                     var state = try store.load() ?? makeState(now: cycleStartedAt)
-                    let snapshot = try readBatterySnapshot()
-                    state = update(state: state, snapshot: snapshot, now: cycleStartedAt)
+                    let batteryStatus = try BatteryStatus.read()
+                    state = update(state: state, batteryStatus: batteryStatus, now: cycleStartedAt)
                     try store.save(state)
                 } catch {
                     do {
@@ -76,16 +40,9 @@ struct BatteryTrackerEngine {
         }
     }
 
-    private func update(state: BatteryTrackerState, snapshot: BatterySnapshot, now: Date) -> BatteryTrackerState {
+    private func update(state: BatteryTrackerState, batteryStatus: BatteryStatus, now: Date) -> BatteryTrackerState {
         var nextState = state
         var session = nextState.session
-        var computedStatus = BatteryTrackerComputedStatus(
-            activeSeconds: 0,
-            usedPercent: 0,
-            usedCapacityMah: 0,
-            currentPercent: snapshot.currentPercent,
-            currentCapacityMah: snapshot.currentCapacityMah
-        )
 
         if let previousCheck = session?.lastCheckAt {
             let elapsed = now.timeIntervalSince(previousCheck)
@@ -94,14 +51,13 @@ struct BatteryTrackerEngine {
             }
         }
 
-        if snapshot.isOnACPower {
+        if batteryStatus.isOnACPower {
             session = nil
         } else {
             if session == nil {
                 session = BatteryTrackerSession(
                     startedAt: now,
-                    startPercent: snapshot.currentPercent,
-                    startCapacityMah: snapshot.currentCapacityMah,
+                    startCapacityMah: batteryStatus.currentCapacityMah,
                     sleepSeconds: 0,
                     lastCheckAt: now
                 )
@@ -110,38 +66,15 @@ struct BatteryTrackerEngine {
             if var activeSession = session {
                 activeSession.lastCheckAt = now
                 session = activeSession
-                computedStatus = makeComputedStatus(session: activeSession, snapshot: snapshot, now: now)
             }
         }
 
         nextState.helperVersion = helperVersion
         nextState.pid = getpid()
         nextState.heartbeatAt = now
-        nextState.powerSource = snapshot.powerSource
-        nextState.chargeStatus = snapshot.chargeStatus
         nextState.session = session
-        nextState.lastComputedStatus = computedStatus
         nextState.lastError = nil
         return nextState
-    }
-
-    private func makeComputedStatus(
-        session: BatteryTrackerSession,
-        snapshot: BatterySnapshot,
-        now: Date
-    ) -> BatteryTrackerComputedStatus {
-        let activeSeconds = max(
-            0,
-            Int(now.timeIntervalSince(session.startedAt).rounded()) - session.sleepSeconds
-        )
-
-        return BatteryTrackerComputedStatus(
-            activeSeconds: activeSeconds,
-            usedPercent: session.startPercent - snapshot.currentPercent,
-            usedCapacityMah: session.startCapacityMah - snapshot.currentCapacityMah,
-            currentPercent: snapshot.currentPercent,
-            currentCapacityMah: snapshot.currentCapacityMah
-        )
     }
 
     private func makeState(now: Date) -> BatteryTrackerState {
@@ -149,10 +82,7 @@ struct BatteryTrackerEngine {
             helperVersion: helperVersion,
             pid: getpid(),
             heartbeatAt: now,
-            powerSource: .unknown,
-            chargeStatus: .unknown,
             session: nil,
-            lastComputedStatus: nil,
             lastError: nil
         )
     }
@@ -162,90 +92,9 @@ struct BatteryTrackerEngine {
             helperVersion: helperVersion,
             pid: getpid(),
             heartbeatAt: now,
-            powerSource: .unknown,
-            chargeStatus: .unknown,
             session: nil,
-            lastComputedStatus: nil,
             lastError: message
         )
-    }
-
-    private func readBatterySnapshot() throws -> BatterySnapshot {
-        let entry = openBatteryEntry()
-        guard entry != IO_OBJECT_NULL else {
-            throw BatteryTrackerEngineError.unavailable
-        }
-        defer { IOObjectRelease(entry) }
-
-        guard
-            let currentCapacity = intProperty(entry: entry, key: "AppleRawCurrentCapacity")
-                ?? intProperty(entry: entry, key: "CurrentCapacity"),
-            let maxCapacity = intProperty(entry: entry, key: "AppleRawMaxCapacity")
-                ?? intProperty(entry: entry, key: "MaxCapacity"),
-            let isOnACPower = boolProperty(entry: entry, key: "ExternalConnected"),
-            let isCharging = boolProperty(entry: entry, key: "IsCharging"),
-            let isFullyCharged = boolProperty(entry: entry, key: "FullyCharged")
-        else {
-            throw BatteryTrackerEngineError.unavailable
-        }
-
-        return BatterySnapshot(
-            currentCapacityMah: currentCapacity,
-            maxCapacityMah: maxCapacity,
-            isOnACPower: isOnACPower,
-            isCharging: isCharging,
-            isFullyCharged: isFullyCharged
-        )
-    }
-
-    private func openBatteryEntry() -> io_registry_entry_t {
-        var iterator = io_iterator_t()
-        let result = IOServiceGetMatchingServices(
-            kIOMainPortDefault,
-            IOServiceMatching("AppleSmartBattery"),
-            &iterator
-        )
-        guard result == KERN_SUCCESS else {
-            return IO_OBJECT_NULL
-        }
-        defer { IOObjectRelease(iterator) }
-        return IOIteratorNext(iterator)
-    }
-
-    private func intProperty(entry: io_registry_entry_t, key: String) -> Int? {
-        guard
-            let value = IORegistryEntryCreateCFProperty(
-                entry,
-                key as CFString,
-                kCFAllocatorDefault,
-                0
-            )?.takeRetainedValue()
-        else {
-            return nil
-        }
-
-        if CFGetTypeID(value) == CFNumberGetTypeID() {
-            return value as? Int
-        }
-        return nil
-    }
-
-    private func boolProperty(entry: io_registry_entry_t, key: String) -> Bool? {
-        guard
-            let value = IORegistryEntryCreateCFProperty(
-                entry,
-                key as CFString,
-                kCFAllocatorDefault,
-                0
-            )?.takeRetainedValue()
-        else {
-            return nil
-        }
-
-        if CFGetTypeID(value) == CFBooleanGetTypeID() {
-            return value as? Bool
-        }
-        return nil
     }
 
     private static func defaultHelperVersion() -> String {
