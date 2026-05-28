@@ -108,7 +108,7 @@ final class StatusItemController: NSObject {
     }
 
     private func formatStatusItemMemoryGb(_ valueGb: Double) -> String {
-        String(format: "%4.1f Gb", locale: FormatLocale.posix, valueGb)
+        String(format: "%4.1f GB", locale: FormatLocale.posix, valueGb)
     }
 
     private func buildStatusItemMenu(with metrics: Metrics) {
