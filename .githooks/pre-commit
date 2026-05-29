@@ -1,0 +1,20 @@
+#!/bin/sh
+set -eu
+
+if [ "${SKIP_BUILD_NUMBER_BUMP:-}" = "1" ]; then
+    exit 0
+fi
+
+project="StillCore.xcodeproj/project.pbxproj"
+build_number="$(date +%Y%m%d%H%M)"
+index_file="$(mktemp "${TMPDIR:-/tmp}/stillcore-build-number.XXXXXX")"
+trap 'rm -f "$index_file"' EXIT
+
+git show ":$project" > "$index_file"
+perl -0pi -e "s/CURRENT_PROJECT_VERSION = \d+;/CURRENT_PROJECT_VERSION = $build_number;/g" "$project" "$index_file"
+
+mode="$(git ls-files -s -- "$project" | awk '{ print $1 }')"
+blob="$(git hash-object -w "$index_file")"
+git update-index --cacheinfo "$mode,$blob,$project"
+
+echo "Set CURRENT_PROJECT_VERSION to $build_number"

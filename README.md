@@ -71,6 +71,12 @@ make clean
 Development builds use `CONFIGURATION=Debug` by default.
 Pass `CONFIGURATION=Release` to build and run the Release configuration with the same command.
 
+Install repository-managed Git hooks once per checkout:
+
+```sh
+make install-hooks
+```
+
 Build and run from the terminal:
 
 ```sh

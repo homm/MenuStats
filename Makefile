@@ -53,6 +53,7 @@ help:
 		'make helper-uninstall Build app and uninstall battery helper' \
 		'make profile        Build $(NAME) and launch xctrace Time Profiler' \
 		'make benchmarks     Run charts benchmarks' \
+		'make install-hooks  Use repo-managed git hooks' \
 		'make clean          Remove .build'
 
 .PHONY: app
@@ -119,6 +120,10 @@ benchmarks:
 	swift run -c release --package-path Benchmarks Benchmarks \
 		--warmup-iterations 3 --max-iterations 2000 --min-time 1 \
 		--time-unit us --columns name,time,throughput,std,iterations
+
+.PHONY: install-hooks
+install-hooks:
+	git config core.hooksPath .githooks
 
 .PHONY: profile
 profile: CONFIGURATION=Release
