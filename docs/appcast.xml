@@ -1,0 +1,35 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>StillCore</title>
+        <item>
+            <title>1.2.0</title>
+            <pubDate>Fri, 29 May 2026 18:46:02 +0400</pubDate>
+            <sparkle:version>1</sparkle:version>
+            <sparkle:shortVersionString>1.2.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[## General improvements
+
+* Click current values to toggle chart series
+* Relative sample age is shown in chart markers
+* Attached window is draggable by its header
+* Battery tracker now shows charging status and current charge more clearly
+* Battery tracker helper memory usage optimized
+
+## Design update
+
+* Fonts are clearer and better aligned
+* Chart colors have better contrast in light and dark appearances
+* Compact update interval control replaces the full-width interval row
+* Simpler, more recognizable battery indicator
+* New attach/detach and quit button icons
+
+Special thanks to @valerypopoff and @ilyabirman for the design.
+
+[Full Changelog](https://github.com/homm/StillCore/compare/v1.1.0...v1.2.0)
+]]></description>
+            <enclosure url="https://github.com/homm/StillCore/releases/download/v1.2.0/StillCore.dmg" sparkle:edSignature="ev25FhpBfD7u1qZxNZBCWXxIBJf2FNIKrfsglczhVNe4aCEwgQpnIOP+NgO0WkRkkzcnNcf6DrDAFyCzMc0LAQ==" length="2078142" type="application/octet-stream"/>
+        </item>
+    </channel>
+</rss>

@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import SwiftUI
 import MacmonSwift
+import Sparkle
 
 enum AppSettings {
     static let defaultMetricsIntervalMs = 2000
@@ -729,6 +730,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var presentationController: MenuPresentationController<ContentView>?
     private let statusItemMenu = NSMenu()
     private var statusItemController: StatusItemController?
+    private var updaterController: SPUStandardUpdaterController?
     private let restartHelperArgument = "--helper-restart"
     private let uninstallHelperArgument = "--helper-uninstall"
 
@@ -745,9 +747,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        updaterController = SPUStandardUpdaterController(
+            startingUpdater: true,
+            updaterDelegate: nil,
+            userDriverDelegate: nil
+        )
+
         let aboutItem = NSMenuItem(title: "About...", action: #selector(showAboutPanel), keyEquivalent: "")
         aboutItem.target = self
         statusItemMenu.addItem(aboutItem)
+
+        let updateItem = NSMenuItem(
+            title: "Check for Updates...",
+            action: #selector(checkForUpdates(_:)),
+            keyEquivalent: ""
+        )
+        updateItem.target = self
+        statusItemMenu.addItem(updateItem)
 
         let quitItem = NSMenuItem(title: "Quit", action: #selector(quitApplication), keyEquivalent: "")
         quitItem.target = self
@@ -781,6 +797,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showAboutPanel() {
         NSApp.activate()
         AboutPanel.show()
+    }
+
+    @objc private func checkForUpdates(_ sender: Any?) {
+        updaterController?.checkForUpdates(sender)
     }
 
     @objc private func quitApplication() {

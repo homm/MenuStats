@@ -1,0 +1,127 @@
+name: Publish appcast
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  appcast:
+    name: Publish Sparkle appcast
+    runs-on: macos-latest
+
+    env:
+      DMG_NAME: StillCore.dmg
+
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+
+      - name: Validate release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+
+          asset_count="$(
+            gh release view "$TAG" \
+              --json assets \
+              --jq '[.assets[] | select(.name == "StillCore.dmg")] | length'
+          )"
+          if [ "$asset_count" -ne 1 ]; then
+            echo "Expected exactly one release asset named $DMG_NAME, found $asset_count."
+            exit 1
+          fi
+
+      - name: Download release DMG
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p .build/appcast/updates
+          gh release download "$TAG" \
+            --pattern "$DMG_NAME" \
+            --dir .build/appcast/updates \
+            --clobber
+
+          dmg_path=".build/appcast/updates/$DMG_NAME"
+          if [ ! -s "$dmg_path" ]; then
+            echo "Release asset $DMG_NAME is missing or empty."
+            exit 1
+          fi
+
+          gh release view "$TAG" \
+            --json body \
+            --jq .body \
+            > .build/appcast/updates/StillCore.md
+          perl -0pi -e 's/\r\n/\n/g; s/<[^>]*>//g' .build/appcast/updates/StillCore.md
+
+      - name: Resolve Sparkle tools
+        run: |
+          set -euo pipefail
+
+          xcodebuild -resolvePackageDependencies \
+            -project StillCore.xcodeproj \
+            -scheme StillCore \
+            -derivedDataPath .build \
+            -onlyUsePackageVersionsFromResolvedFile
+
+          test -x .build/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_appcast
+
+      - name: Generate appcast
+        env:
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SPARKLE_PRIVATE_ED_KEY:-}" ]; then
+            echo "Missing SPARKLE_PRIVATE_ED_KEY secret."
+            exit 1
+          fi
+
+          if [ -f docs/appcast.xml ]; then
+            cp docs/appcast.xml .build/appcast/updates/appcast.xml
+          fi
+
+          printf '%s\n' "$SPARKLE_PRIVATE_ED_KEY" \
+            | .build/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_appcast \
+                --ed-key-file - \
+                --download-url-prefix "https://github.com/homm/StillCore/releases/download/${TAG}/" \
+                --embed-release-notes \
+                --maximum-versions 0 \
+                -o docs/appcast.xml \
+                .build/appcast/updates
+
+      - name: Commit appcast
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$(git status --porcelain -- docs/appcast.xml)" ]; then
+            echo "docs/appcast.xml is already up to date."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/appcast.xml
+
+          changed_paths="$(git diff --cached --name-only)"
+          if [ "$changed_paths" != "docs/appcast.xml" ]; then
+            echo "Unexpected staged paths:"
+            printf '%s\n' "$changed_paths"
+            exit 1
+          fi
+
+          git commit -m "Publish appcast for ${TAG}"
+          git push
