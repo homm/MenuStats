@@ -54,7 +54,7 @@ Building from source requires Xcode with Swift 6 support and network access for 
 Create a local DMG from source:
 
 ```sh
-make release-dmg
+make dmg
 ```
 
 This creates the Release `StillCore.dmg`.

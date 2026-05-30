@@ -17,7 +17,7 @@ Useful `make help` commands for development:
 FYI:
 
 - `make release` — build a Release `StillCore.dmg`, submit it for notarization, then staple and validate it
-- `make release-dmg` — build a local Release `StillCore.dmg` suitable for local running
+- `make dmg` — build a local Release `StillCore.dmg` suitable for local running
 
 ## Verification
 
