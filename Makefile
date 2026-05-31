@@ -138,9 +138,11 @@ _prepare-dmg-staging-dir:
 
 .PHONY: dmg
 DMG_PATH = $(NAME).dmg
+DMG_EXPORT_DIR = $(DERIVED_DATA)/export
 DMG_STAGING_DIR = $(DERIVED_DATA)/dmg
-dmg: EXPORT_DIR=$(DMG_STAGING_DIR)
+dmg: EXPORT_DIR=$(DMG_EXPORT_DIR)
 dmg: _prepare-dmg-staging-dir export-app
+	cp -R "$(DMG_EXPORT_DIR)/$(NAME).app" "$(DMG_STAGING_DIR)/"
 	rm -f "$(DMG_PATH)"
 	hdiutil create -volname "$(NAME)" \
 		-srcfolder "$(DMG_STAGING_DIR)" \
