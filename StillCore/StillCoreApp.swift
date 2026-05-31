@@ -822,6 +822,7 @@ private enum AboutPanel {
 
         let credits = NSMutableAttributedString(try! AttributedString(
             markdown: """
+MIT licensed
 [Source code](https://github.com/homm/StillCore)
 
 Metrics core by [macmon](https://github.com/vladkens/macmon)

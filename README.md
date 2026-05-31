@@ -29,6 +29,13 @@ Prebuilt downloads are available on the GitHub releases page:
 https://github.com/homm/StillCore/releases
 
 
+## License
+
+StillCore is released under the MIT License. The metrics core is built on
+[macmon](https://github.com/vladkens/macmon), which is also distributed under
+the MIT License.
+
+
 ## Why I Built It
 
 I often work on a laptop and want to understand what is happening with energy usage. I used MX Power Gadget for this, but later found that it reports misleadingly low power for itself while consuming a lot of CPU power in practice[^mx-power-gadget]. That led me through several monitoring experiments, and eventually to the decision that I could build something better for my own workflow.
