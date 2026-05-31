@@ -3,6 +3,38 @@
     <channel>
         <title>StillCore</title>
         <item>
+            <title>1.3.0</title>
+            <pubDate>Sun, 31 May 2026 12:28:23 +0000</pubDate>
+            <sparkle:version>202605311622</sparkle:version>
+            <sparkle:shortVersionString>1.3.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[
+
+
+
+## Menu bar battery item
+
+* Added two battery menu bar modes: percentage and icon.
+* The icon reflects charging, charged, and Power Save mode states.
+* Current status is read by the app directly; the helper is only needed for session tracking.
+* Helper actions are now tucked into a popover, making the integration less intrusive.
+* System settings can be opened from the indicator in the app window.
+* Related UI and menu options are hidden on Macs without a battery.
+
+## General improvements
+
+* Updated the app icon.
+* Added Sparkle-based app updates.
+* Added a CPU usage setting to show cluster usage weighted by core count.
+* Fixed memory unit labels to use GB instead of Gb.
+* Kept minimum window resizing behavior consistent.
+
+[Full Changelog](https://github.com/homm/StillCore/compare/v1.2.0...v1.3.0)
+]]></description>
+            <enclosure url="https://github.com/homm/StillCore/releases/download/v1.3.0/StillCore.dmg" length="2482491" type="application/octet-stream" sparkle:edSignature="DRGi6pdq15gaM1OVYgLFIkgDQqIlt0my5BEBNKBtwpACgtpHpx0wtrdEhZ8vzdePRv3wn5u9BLSLO2mIT8XgBQ=="/>
+        </item>
+        <item>
             <title>1.2.0</title>
             <pubDate>Fri, 29 May 2026 18:46:02 +0400</pubDate>
             <sparkle:version>1</sparkle:version>
