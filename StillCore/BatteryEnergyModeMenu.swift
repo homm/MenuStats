@@ -98,16 +98,12 @@ final class BatteryEnergyModeMenuController: NSObject {
 
         Task {
             let result = await Self.runEnergyModeCommand(command)
-            if result.isSuccess {
-                BatteryTrackerService.shared.refreshRuntimeState()
-            } else if result.isSudoPermissionFailure {
+            if result.isSudoPermissionFailure {
                 if showSudoersAlert() {
                     let installResult = await Self.runSudoersInstallScript(sudoersInstallScript())
                     if installResult.isSuccess {
                         let retryResult = await Self.runEnergyModeCommand(command)
-                        if retryResult.isSuccess {
-                            BatteryTrackerService.shared.refreshRuntimeState()
-                        } else {
+                        if !retryResult.isSuccess {
                             showCommandFailureAlert(
                                 title: "Energy Mode update failed",
                                 command: retryResult.command.displayText,
@@ -122,7 +118,7 @@ final class BatteryEnergyModeMenuController: NSObject {
                         )
                     }
                 }
-            } else {
+            } else if !result.isSuccess {
                 showCommandFailureAlert(
                     title: "Energy Mode update failed",
                     command: result.command.displayText,
@@ -192,11 +188,22 @@ final class BatteryEnergyModeMenuController: NSObject {
                 try process.run()
                 process.waitUntilExit()
                 let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-                return EnergyModeCommandResult(
+                let result = EnergyModeCommandResult(
                     command: command,
                     exitCode: process.terminationStatus,
                     output: output
                 )
+                if result.isSuccess {
+                    do {
+                        try await Task.sleep(for: .milliseconds(200))
+                    } catch {
+                        return result
+                    }
+                    await MainActor.run {
+                        BatteryTrackerService.shared.refreshRuntimeState()
+                    }
+                }
+                return result
             } catch {
                 return EnergyModeCommandResult(
                     command: command,
