@@ -97,33 +97,12 @@ final class BatteryEnergyModeMenuController: NSObject {
         let command = EnergyModeCommand(arguments: [powerSource, "lowpowermode", lowPowerMode])
 
         Task {
-            let result = await Self.runEnergyModeCommand(command)
-            if result.isSudoPermissionFailure {
-                if showSudoersAlert() {
-                    let installResult = await Self.runSudoersInstallScript(sudoersInstallScript())
-                    if installResult.isSuccess {
-                        let retryResult = await Self.runEnergyModeCommand(command)
-                        if !retryResult.isSuccess {
-                            showCommandFailureAlert(
-                                title: "Energy Mode update failed",
-                                command: retryResult.command.displayText,
-                                output: retryResult.output
-                            )
-                        }
-                    } else if !installResult.isUserCancelled {
-                        showCommandFailureAlert(
-                            title: "Permission setup failed",
-                            command: sudoersInstallCommand(),
-                            output: installResult.output
-                        )
+            if await Self.runEnergyModeCommand(command).isSudoFailure {
+                if continueSudoersAlert() {
+                    if await Self.runEnergyModeCommand(command).isSudoFailure {
+                        _ = await Self.runSudoersInstallScript(Self.sudoersInstallScript(), retrying: command)
                     }
                 }
-            } else if !result.isSuccess {
-                showCommandFailureAlert(
-                    title: "Energy Mode update failed",
-                    command: result.command.displayText,
-                    output: result.output
-                )
             }
         }
     }
@@ -150,11 +129,7 @@ final class BatteryEnergyModeMenuController: NSObject {
         let exitCode: Int32
         let output: String
 
-        var isSuccess: Bool {
-            exitCode == 0
-        }
-
-        var isSudoPermissionFailure: Bool {
+        var isSudoFailure: Bool {
             exitCode == 1 && output.hasPrefix("sudo: ")
         }
     }
@@ -162,10 +137,6 @@ final class BatteryEnergyModeMenuController: NSObject {
     private struct SudoersInstallResult: Sendable {
         let exitCode: Int32
         let output: String
-
-        var isSuccess: Bool {
-            exitCode == 0
-        }
 
         var isUserCancelled: Bool {
             exitCode == 1 && output.contains("(-128)")
@@ -184,38 +155,52 @@ final class BatteryEnergyModeMenuController: NSObject {
             process.standardOutput = pipe
             process.standardError = pipe
 
+            let result: EnergyModeCommandResult
             do {
                 try process.run()
                 process.waitUntilExit()
                 let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-                let result = EnergyModeCommandResult(
+                result = EnergyModeCommandResult(
                     command: command,
                     exitCode: process.terminationStatus,
                     output: output
                 )
-                if result.isSuccess {
-                    do {
-                        try await Task.sleep(for: .milliseconds(200))
-                    } catch {
-                        return result
-                    }
-                    await MainActor.run {
-                        BatteryTrackerService.shared.refreshRuntimeState()
-                    }
-                }
-                return result
             } catch {
-                return EnergyModeCommandResult(
+                result = EnergyModeCommandResult(
                     command: command,
                     exitCode: -1,
                     output: error.localizedDescription
                 )
             }
+
+            if result.exitCode != 0 {
+                if !result.isSudoFailure {
+                    await MainActor.run {
+                        showCommandFailureAlert(
+                            title: "Energy Mode update failed",
+                            command: result.command.displayText,
+                            output: result.output
+                        )
+                    }
+                }
+                return result
+            }
+
+            do {
+                try await Task.sleep(for: .milliseconds(200))
+            } catch {
+                return result
+            }
+            await MainActor.run {
+                BatteryTrackerService.shared.refreshRuntimeState()
+            }
+            return result
         }.value
     }
 
     private nonisolated static func runSudoersInstallScript(
-        _ script: String
+        _ script: String,
+        retrying command: EnergyModeCommand
     ) async -> SudoersInstallResult {
         await Task.detached {
             let process = Process()
@@ -229,29 +214,46 @@ final class BatteryEnergyModeMenuController: NSObject {
             process.standardOutput = pipe
             process.standardError = pipe
 
+            let result: SudoersInstallResult
             do {
                 try process.run()
                 process.waitUntilExit()
                 let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-                return SudoersInstallResult(exitCode: process.terminationStatus, output: output)
+                result = SudoersInstallResult(exitCode: process.terminationStatus, output: output)
             } catch {
-                return SudoersInstallResult(exitCode: -1, output: error.localizedDescription)
+                result = SudoersInstallResult(exitCode: -1, output: error.localizedDescription)
             }
+
+            if result.exitCode != 0 {
+                if !result.isUserCancelled {
+                    await MainActor.run {
+                        showCommandFailureAlert(
+                            title: "Permission setup failed",
+                            command: sudoersInstallCommand(),
+                            output: result.output
+                        )
+                    }
+                }
+                return result
+            }
+
+            _ = await runEnergyModeCommand(command)
+            return result
         }.value
     }
 
-    private func showSudoersAlert() -> Bool {
+    private func continueSudoersAlert() -> Bool {
         let alert = NSAlert()
-        alert.messageText = "StillCore needs permission to change Energy Mode"
-        alert.informativeText = "Run this command in Terminal once:"
-        alert.accessoryView = makeCommandAccessoryView(command: sudoersInstallCommand())
+        alert.messageText = "Need permission to change Energy Mode"
+        alert.informativeText = "StillCore will run this command, or you can run it manually in Terminal:"
+        alert.accessoryView = makeCommandAccessoryView(command: Self.sudoersInstallCommand())
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "OK")
-        alert.addButton(withTitle: "Set Up Automatically")
-        return alert.runModal() == .alertSecondButtonReturn
+        alert.addButton(withTitle: "Continue")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
-    private func showCommandFailureAlert(title: String, command: String, output: String) {
+    private static func showCommandFailureAlert(title: String, command: String, output: String) {
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = """
@@ -266,13 +268,13 @@ final class BatteryEnergyModeMenuController: NSObject {
         alert.runModal()
     }
 
-    private func sudoersInstallCommand() -> String {
+    private static func sudoersInstallCommand() -> String {
         "sudo sh -c \"\(sudoersInstallScript())\""
     }
 
-    private func sudoersInstallScript() -> String {
+    private static func sudoersInstallScript() -> String {
         let sudoersLine = "\(NSUserName()) ALL=(root) NOPASSWD: /usr/bin/pmset -[bc] lowpowermode [01]"
-        return "echo '\(sudoersLine)' > /etc/sudoers.d/stillcore-energy-mode && chmod 440 /etc/sudoers.d/stillcore-energy-mode"
+        return "echo '\(sudoersLine)' > /etc/sudoers.d/stillcore && chmod 440 /etc/sudoers.d/stillcore"
     }
 
     private func makeCommandAccessoryView(command: String) -> NSView {
