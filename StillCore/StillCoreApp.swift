@@ -501,6 +501,7 @@ struct ContentView: View {
     @ObservedObject var presentationState: MenuPresentationState
     @State private var highlightedChartSampleX: Double?
     @State private var isBatteryTrackerPopoverPresented = false
+    @State private var batteryEnergyModeMenuController = BatteryEnergyModeMenuController()
 
     var body: some View {
         VStack(spacing: 8) {
@@ -540,7 +541,9 @@ struct ContentView: View {
                 }
                     .buttonStyle(AccessoryLikeButtonStyle())
                     .help("Update interval")
-                    .padding(.trailing, 4)
+                    .padding(.leading, -5)
+                    .padding(.trailing, -1)
+                    .padding(.vertical, -3)
                 Button {
                     presentationState.setPresentationMode(
                         presentationState.mode == .attached ? .floating : .attached)
@@ -617,7 +620,7 @@ struct ContentView: View {
                 HStack(spacing: 8) {
                     if let batteryState = batteryTrackerService.runtimeState {
                         Button {
-                            batteryTrackerService.openBatterySettings()
+                            batteryEnergyModeMenuController.showMenu()
                         } label: {
                             HStack(spacing: 4) {
                                 Image(nsImage: BatteryIndicatorImage.make(
@@ -632,9 +635,19 @@ struct ContentView: View {
                             }
                         }
                             .buttonStyle(AccessoryLikeButtonStyle())
-                            .help("Open Battery settings")
-                            .padding(.leading, -2)
-                            .padding(.vertical, -1)
+                            .background {
+                                BatteryEnergyModeMenuAnchor(
+                                    controller: batteryEnergyModeMenuController,
+                                    batteryState: batteryState,
+                                    openBatterySettings: {
+                                        batteryTrackerService.openBatterySettings()
+                                    }
+                                )
+                            }
+                            .help("Energy mode")
+                            .padding(.leading, -7)
+                            .padding(.trailing, -5)
+                            .padding(.vertical, -4)
                     }
 
                     Text(batteryTrackerService.statusText)
