@@ -176,7 +176,7 @@ final class MenuPresentationController<Content: View>: NSObject, NSWindowDelegat
         }
         presentationState.setWindowVisible(true)
         if presentationMode == .floating {
-            NSApp.activate()
+            NSApp.activate(ignoringOtherApps: true)
         }
         currentWindow.makeKeyAndOrderFront(nil)
         currentWindow.makeFirstResponder(nil)
