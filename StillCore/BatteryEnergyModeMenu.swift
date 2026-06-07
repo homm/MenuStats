@@ -39,8 +39,14 @@ final class BatteryEnergyModeMenuController: NSObject {
         )
         popUpCell.menu = menu
         popUpCell.select(selectedItem)
-        // Compensate the SwiftUI button layout so the popup cell frame matches the visible battery label.
-        let cellFrame = anchorView.bounds.offsetBy(dx: 2, dy: 3)
+        var cellFrame = anchorView.bounds
+        if #available(macOS 26.0, *) {
+            // cellFrame = cellFrame.offsetBy(dx: 1, dy: 1)  // Bordered
+            cellFrame = cellFrame.offsetBy(dx: 5, dy: -1)  // Borderless
+        } else {
+            // cellFrame = cellFrame.offsetBy(dx: -5, dy: 1)  // Bordered
+            cellFrame = cellFrame.offsetBy(dx: 2, dy: 3)  // Borderless
+        }
         popUpCell.performClick(withFrame: cellFrame, in: anchorView)
     }
 
