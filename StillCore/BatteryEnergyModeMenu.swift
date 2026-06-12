@@ -280,7 +280,8 @@ final class BatteryEnergyModeMenuController: NSObject {
 
     private static func sudoersInstallScript() -> String {
         let sudoersLine = "\(NSUserName()) ALL=(root) NOPASSWD: /usr/bin/pmset -[bc] lowpowermode [01]"
-        return "echo '\(sudoersLine)' > /etc/sudoers.d/stillcore && chmod 440 /etc/sudoers.d/stillcore"
+        let sudoersPath = "/etc/sudoers.d/stillcore-\(getuid())"
+        return "echo '\(sudoersLine)' > \(sudoersPath) && chmod 440 \(sudoersPath)"
     }
 
     private func makeCommandAccessoryView(command: String) -> NSView {
