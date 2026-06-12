@@ -155,13 +155,13 @@ final class BatteryTrackerService: ObservableObject {
             stateReadError = "State read failed: \(error.localizedDescription)"
         }
 
-        runtimeState = nil
         do {
             runtimeState = BatteryRuntimeState(
                 batteryTrackerState: batteryTrackerState,
                 batteryStatus: try BatteryStatus.read()
             )
         } catch {
+            runtimeState = nil
             batteryStatusReadError = "Battery read failed: \(error.localizedDescription)"
         }
 

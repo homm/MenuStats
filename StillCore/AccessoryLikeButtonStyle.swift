@@ -5,8 +5,8 @@ struct AccessoryLikeButtonStyle: ButtonStyle {
     @State private var isHovered = false
 
     var cornerRadius: CGFloat = 6
-    var horizontalPadding: CGFloat = 4.5
-    var verticalPadding: CGFloat = 2.5
+    var horizontalPadding: CGFloat = 5
+    var verticalPadding: CGFloat = 3
 
     func makeBody(configuration: Configuration) -> some View {
         let rect = RoundedRectangle(cornerRadius: cornerRadius)
@@ -21,8 +21,6 @@ struct AccessoryLikeButtonStyle: ButtonStyle {
             .background {
                 AppKitHoverProbeView(isHovered: $isHovered)
             }
-            .padding(.vertical, -verticalPadding)
-            .padding(.horizontal, -horizontalPadding)
     }
 
     private func background(isPressed: Bool) -> some ShapeStyle {
