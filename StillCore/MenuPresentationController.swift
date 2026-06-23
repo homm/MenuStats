@@ -101,7 +101,7 @@ private final class FloatingWindow: NSWindow {
 final class MenuPresentationController<Content: View>: NSObject, NSWindowDelegate {
     typealias ContentBuilder = (MenuPresentationState) -> Content
 
-    let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    private(set) var statusItem: NSStatusItem?
     private let presentationState = MenuPresentationState()
     private let statusItemMenu: NSMenu?
     private let hostingView: NSHostingView<AnyView>
@@ -133,7 +133,6 @@ final class MenuPresentationController<Content: View>: NSObject, NSWindowDelegat
         floatingWindow.delegate = self
         configureWindow?(attachedWindow, .attached)
         configureWindow?(floatingWindow, .floating)
-        configureStatusItemAction()
 
         presentationState.onModeChange = { [weak self] in
             guard let self else { return }
@@ -172,7 +171,7 @@ final class MenuPresentationController<Content: View>: NSObject, NSWindowDelegat
 
     private func showWindow() {
         if presentationMode == .attached {
-            attachedWindow.repositionWindow(relativeTo: statusItem.button)
+            attachedWindow.repositionWindow(relativeTo: statusItem?.button)
         }
         presentationState.setWindowVisible(true)
         if presentationMode == .floating {
@@ -204,21 +203,46 @@ final class MenuPresentationController<Content: View>: NSObject, NSWindowDelegat
         containerView.addSubview(hostingView)
     }
 
-    private func configureStatusItemAction() {
-        guard let button = statusItem.button else { return }
+    func setStatusItem(_ item: NSStatusItem?) {
+        statusItem = item
+        guard let item else { return }
+        configureStatusItemAction(for: item)
+    }
+
+    private func configureStatusItemAction(for item: NSStatusItem) {
+        guard let button = item.button else { return }
         button.target = self
         button.action = #selector(handleStatusItemAction)
         button.sendAction(on: [.leftMouseDown, .rightMouseUp])
     }
 
     @objc private func handleStatusItemAction() {
+        guard let statusItem else { return }
         switch NSApp.currentEvent?.type {
         case .leftMouseDown:
-            toggleFromStatusItem()
+            handleStatusItemLeftClick()
         case .rightMouseUp:
-            showStatusItemMenu()
+            handleStatusItemRightClick(from: statusItem)
         default:
             return
+        }
+    }
+
+    func handleStatusItemLeftClick() {
+        toggleFromStatusItem()
+    }
+
+    func handleStatusItemRightClick(from statusItem: NSStatusItem) {
+        guard let statusItemMenu else { return }
+        let selector = NSSelectorFromString("popUpStatusItemMenu:")
+        if statusItem.responds(to: selector) {
+            _ = statusItem.perform(selector, with: statusItemMenu)
+        } else if let button = statusItem.button {
+            statusItemMenu.popUp(
+                positioning: nil,
+                at: NSPoint(x: 0, y: button.bounds.height),
+                in: button
+            )
         }
     }
 
@@ -230,13 +254,6 @@ final class MenuPresentationController<Content: View>: NSObject, NSWindowDelegat
         } else {
             showWindow()
         }
-    }
-
-    private func showStatusItemMenu() {
-        guard let statusItemMenu else { return }
-        let selector = NSSelectorFromString("popUpStatusItemMenu:")
-        guard statusItem.responds(to: selector) else { return }
-        _ = statusItem.perform(selector, with: statusItemMenu)
     }
 
     func windowDidResignKey(_ notification: Notification) {

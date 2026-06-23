@@ -8,7 +8,8 @@ enum AppSettings {
     static let defaultMetricsIntervalMs = 2000
     private static let metricsIntervalKey = "metricsIntervalMs"
     private static let frequencyUsageByCoresKey = "frequencyUsageByCores"
-    private static let statusItemDisplayModeKey = "statusItemDisplayMode"
+    private static let statusItemDisplayModesKey = "statusItemDisplayModes"
+    private static let legacyStatusItemDisplayModeKey = "statusItemDisplayMode"
 
     static var metricsIntervalMs: Int {
         get {
@@ -20,12 +21,21 @@ enum AppSettings {
         }
     }
 
-    static var statusItemDisplayMode: String? {
+    static var statusItemDisplayModes: [String] {
         get {
-            UserDefaults.standard.string(forKey: statusItemDisplayModeKey)
+            if let modes = UserDefaults.standard.stringArray(forKey: statusItemDisplayModesKey) {
+                return modes
+            }
+            if let legacy = UserDefaults.standard.string(forKey: legacyStatusItemDisplayModeKey),
+                legacy != "icon"
+            {
+                UserDefaults.standard.set([legacy], forKey: statusItemDisplayModesKey)
+                return [legacy]
+            }
+            return []
         }
         set {
-            UserDefaults.standard.set(newValue, forKey: statusItemDisplayModeKey)
+            UserDefaults.standard.set(newValue, forKey: statusItemDisplayModesKey)
         }
     }
 
@@ -802,8 +812,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         self.presentationController = presentationController
         statusItemController = StatusItemController(
-            statusItem: presentationController.statusItem,
-            menu: statusItemMenu
+            menu: statusItemMenu,
+            onPrimaryStatusItemChanged: { statusItem in
+                presentationController.setStatusItem(statusItem)
+            }
         )
     }
 

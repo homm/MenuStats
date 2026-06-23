@@ -7,16 +7,9 @@ private struct StatusItemDisplayDescriptor {
     let displayName: String
     let persistenceValue: String
     let source: StatusItemDisplaySource
-
-    static let icon = StatusItemDisplayDescriptor(
-        displayName: "Icon",
-        persistenceValue: "icon",
-        source: .icon
-    )
 }
 
 private enum StatusItemDisplaySource {
-    case icon
     case metrics((Metrics) -> Double?, (Double) -> String)
     case batteryIcon
     case batteryStatus((BatteryRuntimeState) -> String?)
@@ -24,21 +17,27 @@ private enum StatusItemDisplaySource {
 
 @MainActor
 final class StatusItemController: NSObject {
-    private let statusItem: NSStatusItem
+    private static let maxSelectedModes = 4
+
+    private var primaryStatusItem: NSStatusItem?
     private let menu: NSMenu
+    private let onPrimaryStatusItemChanged: (NSStatusItem?) -> Void
     private var statusMetricsSubscription: AnyCancellable?
     private var statusBatterySubscription: AnyCancellable?
     private var lastMetrics: Metrics?
     private var lastBatteryState: BatteryRuntimeState?
     private var displayDescriptors: [StatusItemDisplayDescriptor] = []
-    private var selectedDisplayDescriptor = StatusItemDisplayDescriptor.icon
+    private var selectedModes: [String] = []
 
-    init(statusItem: NSStatusItem, menu: NSMenu) {
-        self.statusItem = statusItem
+    init(
+        menu: NSMenu,
+        onPrimaryStatusItemChanged: @escaping (NSStatusItem?) -> Void
+    ) {
         self.menu = menu
+        self.onPrimaryStatusItemChanged = onPrimaryStatusItemChanged
         super.init()
 
-        configureStatusItem()
+        ensurePrimaryStatusItem()
 
         statusMetricsSubscription = AppDependencies.shared.metricsPublisher
             .receive(on: DispatchQueue.main)
@@ -53,34 +52,31 @@ final class StatusItemController: NSObject {
             }
     }
 
-    private func configureStatusItem() {
+    private func ensurePrimaryStatusItem() {
+        guard primaryStatusItem == nil else { return }
+        let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         guard let button = statusItem.button else { return }
         button.image = nil
         button.font = AppFonts.statusItemButton
         button.toolTip = AppPresentation.statusItemToolTip
-        applyStatusItemIcon(to: statusItem)
+        primaryStatusItem = statusItem
+        onPrimaryStatusItemChanged(statusItem)
+        applyCombinedDisplay()
     }
 
     private func updateStatusItemMetrics(_ metrics: Metrics) {
         lastMetrics = metrics
         if displayDescriptors.isEmpty {
             buildStatusItemMenu(with: metrics)
-            applyStatusItemDisplayMode(AppSettings.statusItemDisplayMode ?? "icon")
+            applySelectedModes(AppSettings.statusItemDisplayModes)
         } else {
-            applyStatusItemMetrics(to: statusItem)
+            applyCombinedDisplay()
         }
     }
 
     private func updateStatusItemBatteryState(_ state: BatteryRuntimeState?) {
         lastBatteryState = state
-        switch selectedDisplayDescriptor.source {
-        case .batteryIcon:
-            applyStatusItemBatteryIcon(to: statusItem)
-        case .batteryStatus:
-            applyStatusItemBatteryState(to: statusItem)
-        case .icon, .metrics:
-            return
-        }
+        applyCombinedDisplay()
     }
 
     private func formatStatusItemPower(_ value: Double) -> String {
@@ -117,7 +113,7 @@ final class StatusItemController: NSObject {
         for descriptor in displayDescriptors.reversed() {
             let item = NSMenuItem(
                 title: descriptor.displayName,
-                action: #selector(selectStatusItemDisplayMode(_:)),
+                action: #selector(toggleStatusItemDisplayMode(_:)),
                 keyEquivalent: ""
             )
             item.target = self
@@ -126,34 +122,24 @@ final class StatusItemController: NSObject {
         }
     }
 
-    private func applyStatusItemMetrics(to statusItem: NSStatusItem) {
-        guard case .metrics(let getValue, let formatValue) = selectedDisplayDescriptor.source else {
-            return
+    private func formattedDisplayPart(for descriptor: StatusItemDisplayDescriptor) -> String? {
+        switch descriptor.source {
+        case .metrics(let getValue, let formatValue):
+            guard let lastMetrics, let value = getValue(lastMetrics) else { return nil }
+            return formatValue(value).trimmingCharacters(in: .whitespaces)
+        case .batteryStatus(let formatValue):
+            guard let lastBatteryState, let title = formatValue(lastBatteryState) else { return nil }
+            return title.trimmingCharacters(in: .whitespaces)
+        case .batteryIcon:
+            return nil
         }
-        guard let lastMetrics, let value = getValue(lastMetrics) else {
-            applyStatusItemIcon(to: statusItem)
-            return
-        }
-        applyStatusItemTitle(formatValue(value), to: statusItem)
     }
 
-    private func applyStatusItemBatteryState(to statusItem: NSStatusItem) {
-        guard case .batteryStatus(let formatValue) = selectedDisplayDescriptor.source else {
-            return
-        }
-        guard let lastBatteryState, let title = formatValue(lastBatteryState) else {
-            applyStatusItemIcon(to: statusItem)
-            return
-        }
-        applyStatusItemTitle(title, to: statusItem)
-    }
-
-    private func applyStatusItemBatteryIcon(to statusItem: NSStatusItem) {
+    private func applyBatteryIcon(to statusItem: NSStatusItem) {
         guard let lastBatteryState else {
             applyStatusItemIcon(to: statusItem)
             return
         }
-
         let image = BatteryIndicatorImage.make(
             state: lastBatteryState,
             usesSecondaryMask: true
@@ -189,39 +175,68 @@ final class StatusItemController: NSObject {
         }
     }
 
-    private func applyStatusItemDisplayMode(_ persistenceValue: String) {
-        let selectedStatusItemDisplayMode =
-            displayDescriptors.contains { $0.persistenceValue == persistenceValue }
-            ? persistenceValue
-            : "icon"
-        selectedDisplayDescriptor =
-            displayDescriptors.first { $0.persistenceValue == selectedStatusItemDisplayMode }
-            ?? .icon
-        AppSettings.statusItemDisplayMode = selectedDisplayDescriptor.persistenceValue
-        for item in menu.items {
-            guard let persistenceValue = item.representedObject as? String else { continue }
-            item.state = persistenceValue == selectedDisplayDescriptor.persistenceValue ? .on : .off
+    private func applyCombinedDisplay() {
+        guard let statusItem = primaryStatusItem else { return }
+
+        if selectedModes.isEmpty {
+            applyStatusItemIcon(to: statusItem)
+            return
         }
 
-        switch selectedDisplayDescriptor.source {
-        case .metrics:
-            applyStatusItemMetrics(to: statusItem)
-        case .batteryIcon:
-            applyStatusItemBatteryIcon(to: statusItem)
-        case .batteryStatus:
-            applyStatusItemBatteryState(to: statusItem)
-        case .icon:
+        if selectedModes.count == 1,
+            selectedModes[0] == "batteryIcon"
+        {
+            applyBatteryIcon(to: statusItem)
+            return
+        }
+
+        let parts = selectedModes.compactMap { mode in
+            displayDescriptors
+                .first { $0.persistenceValue == mode }
+                .flatMap { formattedDisplayPart(for: $0) }
+        }
+
+        if parts.isEmpty {
             applyStatusItemIcon(to: statusItem)
+        } else {
+            applyStatusItemTitle(parts.joined(separator: " "), to: statusItem)
         }
     }
 
-    @objc private func selectStatusItemDisplayMode(_ sender: NSMenuItem) {
+    private func applySelectedModes(_ modes: [String]) {
+        let validModes = modes.filter { mode in
+            displayDescriptors.contains { $0.persistenceValue == mode }
+        }
+        selectedModes = validModes
+        AppSettings.statusItemDisplayModes = validModes
+        updateMenuCheckStates()
+        applyCombinedDisplay()
+    }
+
+    private func updateMenuCheckStates() {
+        for item in menu.items {
+            guard let persistenceValue = item.representedObject as? String else { continue }
+            item.state = selectedModes.contains(persistenceValue) ? .on : .off
+        }
+    }
+
+    @objc private func toggleStatusItemDisplayMode(_ sender: NSMenuItem) {
         guard let persistenceValue = sender.representedObject as? String else { return }
-        applyStatusItemDisplayMode(persistenceValue)
+        var modes = selectedModes
+        if modes.contains(persistenceValue) {
+            modes.removeAll { $0 == persistenceValue }
+        } else {
+            guard modes.count < Self.maxSelectedModes else {
+                NSSound.beep()
+                return
+            }
+            modes.append(persistenceValue)
+        }
+        applySelectedModes(modes)
     }
 
     private func makeStatusItemDisplayDescriptors(metrics: Metrics) -> [StatusItemDisplayDescriptor] {
-        var descriptors = [StatusItemDisplayDescriptor.icon]
+        var descriptors: [StatusItemDisplayDescriptor] = []
 
         if BatteryTrackerService.isBatteryAvailable {
             descriptors += [
