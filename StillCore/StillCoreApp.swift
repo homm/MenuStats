@@ -148,11 +148,17 @@ final class AppDependencies: ObservableObject {
                     guard !Task.isCancelled else { break }
                     lastUpdateStarted = clock.now
 
-                    let metrics = try sampler.metrics()
-                    await MainActor.run {
-                        AppDependencies.shared.metricsSubject.send(metrics)
-                        if !AppDependencies.shared.metricsError.isEmpty {
-                            AppDependencies.shared.metricsError = ""
+                    do {
+                        let metrics = try sampler.metrics()
+                        await MainActor.run {
+                            AppDependencies.shared.metricsSubject.send(metrics)
+                            if !AppDependencies.shared.metricsError.isEmpty {
+                                AppDependencies.shared.metricsError = ""
+                            }
+                        }
+                    } catch {
+                        await MainActor.run {
+                            AppDependencies.shared.metricsError = String(describing: error)
                         }
                     }
                 }
