@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import Foundation
 import ServiceManagement
+import UserNotifications
 
 @MainActor
 enum BatteryTrackerInstallState: Equatable {
@@ -47,6 +48,10 @@ struct BatteryRuntimeState {
         guard let usedCapacityMah, batteryStatus.maxCapacityMah > 0 else { return nil }
         return Double(usedCapacityMah) * 100.0 / Double(batteryStatus.maxCapacityMah)
     }
+
+    var abnormalDrainDetected: Bool {
+        batteryTrackerState?.abnormalDrainDetected ?? false
+    }
 }
 
 @MainActor
@@ -74,6 +79,13 @@ final class BatteryTrackerService: ObservableObject {
     private let service = SMAppService.agent(plistName: BatteryTrackerConstants.launchAgentPlistName)
     private var timer: Timer?
     private var pendingRefreshWorkItem: DispatchWorkItem?
+
+    // Abnormal-drain notification: fire once on the rising edge, with a cooldown so a
+    // flapping flag can't spam the user.
+    private static let abnormalDrainNotificationCooldown: TimeInterval = 1800
+    private static let abnormalDrainNotificationIdentifier = "com.github.homm.StillCore.abnormalDrain"
+    private var lastAbnormalDrain = false
+    private var lastAbnormalNotifiedAt: Date?
 
     private init(start: Bool) {
         guard start else { return }
@@ -174,6 +186,49 @@ final class BatteryTrackerService: ObservableObject {
         } else if !lastErrorMessage.hasPrefix("Install failed:") && !lastErrorMessage.hasPrefix("Uninstall failed:") {
             lastErrorMessage = ""
         }
+
+        evaluateAbnormalDrainNotification()
+    }
+
+    private func evaluateAbnormalDrainNotification() {
+        let detected = isHelperRunning && (runtimeState?.abnormalDrainDetected ?? false)
+        defer { lastAbnormalDrain = detected }
+
+        guard detected, !lastAbnormalDrain else { return }
+        guard AppSettings.abnormalDrainWarningEnabled else { return }
+
+        let now = Date()
+        if let lastNotifiedAt = lastAbnormalNotifiedAt,
+           now.timeIntervalSince(lastNotifiedAt) < Self.abnormalDrainNotificationCooldown {
+            return
+        }
+        lastAbnormalNotifiedAt = now
+
+        postAbnormalDrainNotification()
+    }
+
+    private func postAbnormalDrainNotification() {
+        let content = UNMutableNotificationContent()
+        content.title = "Battery draining faster than usual"
+        if let runtimeState,
+           let usedPercent = runtimeState.usedPercent,
+           let activeSeconds = runtimeState.activeSeconds {
+            content.body = "Recent drain is well above this session's average "
+                + "(used \(Int(usedPercent.rounded()))% over \(formatDuration(activeSeconds))). "
+                + "Check for runaway apps or heavy background tasks."
+        } else {
+            content.body = "Recent drain is well above this session's average. "
+                + "Check for runaway apps or heavy background tasks."
+        }
+        content.sound = .default
+
+        // Stable identifier coalesces repeats into a single Notification Center entry.
+        let request = UNNotificationRequest(
+            identifier: Self.abnormalDrainNotificationIdentifier,
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request)
     }
 
     var runtimeLabel: String {
@@ -216,7 +271,8 @@ final class BatteryTrackerService: ObservableObject {
             } else {
                 sleepSuffix = ""
             }
-            return "Drained \(Int(usedPercent.rounded()))% over \(activeDuration)\(sleepSuffix)"
+            let warningPrefix = runtimeState.abnormalDrainDetected ? "⚠︎ " : ""
+            return "\(warningPrefix)Drained \(Int(usedPercent.rounded()))% over \(activeDuration)\(sleepSuffix)"
         }
 
         return chargeStatusText(runtimeState.chargeStatus)

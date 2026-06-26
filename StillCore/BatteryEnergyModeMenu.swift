@@ -60,6 +60,15 @@ final class BatteryEnergyModeMenuController: NSObject {
             title: "Power Save", state: batteryState, powerSaveMode: true, tag: EnergyModeTag.powerSave
         ))
         menu.addItem(.separator())
+        let warningItem = NSMenuItem(
+            title: "Warn on Fast Battery Drain",
+            action: #selector(toggleAbnormalDrainWarning(_:)),
+            keyEquivalent: ""
+        )
+        warningItem.target = self
+        warningItem.state = AppSettings.abnormalDrainWarningEnabled ? .on : .off
+        menu.addItem(warningItem)
+        menu.addItem(.separator())
         let batterySettingsItem = NSMenuItem(
             title: "Battery Settings...",
             action: #selector(openBatterySettings(_:)),
@@ -68,6 +77,11 @@ final class BatteryEnergyModeMenuController: NSObject {
         batterySettingsItem.target = self
         menu.addItem(batterySettingsItem)
         return menu
+    }
+
+    @objc private func toggleAbnormalDrainWarning(_ sender: NSMenuItem) {
+        AppSettings.abnormalDrainWarningEnabled.toggle()
+        sender.state = AppSettings.abnormalDrainWarningEnabled ? .on : .off
     }
 
     private func makeEnergyModeItem(

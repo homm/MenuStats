@@ -3,12 +3,14 @@ import Combine
 import SwiftUI
 import MacmonSwift
 import Sparkle
+import UserNotifications
 
 enum AppSettings {
     static let defaultMetricsIntervalMs = 2000
     private static let metricsIntervalKey = "metricsIntervalMs"
     private static let frequencyUsageByCoresKey = "frequencyUsageByCores"
     private static let statusItemDisplayModeKey = "statusItemDisplayMode"
+    private static let abnormalDrainWarningEnabledKey = "abnormalDrainWarningEnabled"
 
     static var metricsIntervalMs: Int {
         get {
@@ -35,6 +37,17 @@ enum AppSettings {
         }
         set {
             UserDefaults.standard.set(newValue, forKey: frequencyUsageByCoresKey)
+        }
+    }
+
+    // Warn when the battery drains noticeably faster than the session average.
+    // Defaults to true: an unset value (object == nil) reads as enabled.
+    static var abnormalDrainWarningEnabled: Bool {
+        get {
+            UserDefaults.standard.object(forKey: abnormalDrainWarningEnabledKey) as? Bool ?? true
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: abnormalDrainWarningEnabledKey)
         }
     }
 }
@@ -739,7 +752,7 @@ struct ContentView: View {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private var presentationController: MenuPresentationController<ContentView>?
     private let statusItemMenu = NSMenu()
     private var statusItemController: StatusItemController?
@@ -758,6 +771,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             BatteryTrackerService.shared.uninstallHelper()
             NSApp.terminate(nil)
             return
+        }
+
+        // Local notifications surface abnormal battery drain. Ask once; the warning
+        // path is also gated by the AppSettings toggle.
+        if BatteryTrackerService.isBatteryAvailable {
+            let center = UNUserNotificationCenter.current()
+            center.delegate = self
+            center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
         }
 
         updaterController = SPUStandardUpdaterController(
@@ -818,6 +839,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func quitApplication() {
         NSApp.terminate(nil)
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
     }
 }
 
