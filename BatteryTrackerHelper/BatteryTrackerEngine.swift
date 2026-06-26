@@ -22,13 +22,16 @@ struct BatteryTrackerEngine {
     }
 
     func run() -> Never {
+        // Cache survives loop iterations so `pmset` is only spawned on a slow cadence.
+        var highPowerModeReader = HighPowerModeReader()
         while true {
             autoreleasepool {
                 let cycleStartedAt = Date()
 
                 do {
                     var state = try store.load() ?? makeState(now: cycleStartedAt)
-                    let batteryStatus = try BatteryStatus.read()
+                    var batteryStatus = try BatteryStatus.read()
+                    batteryStatus.highPowerMode = highPowerModeReader.read(now: cycleStartedAt)
                     state = update(state: state, batteryStatus: batteryStatus, now: cycleStartedAt)
                     try store.save(state)
                 } catch {
@@ -80,7 +83,8 @@ struct BatteryTrackerEngine {
                 let reading = BatteryCapacityReading(
                     at: now,
                     capacityMah: batteryStatus.currentCapacityMah,
-                    powerSaveMode: batteryStatus.powerSaveMode
+                    powerSaveMode: batteryStatus.powerSaveMode,
+                    highPowerMode: batteryStatus.highPowerMode
                 )
                 // A sleep gap makes the trailing rate meaningless; start the window fresh.
                 var history = sleepGapDetected ? [] : (activeSession.capacityHistory ?? [])
@@ -123,10 +127,15 @@ struct BatteryTrackerEngine {
         guard let oldest = history.first, let newest = history.last else { return false }
 
         // Need a sustained span of recent data, all in the same energy mode so a mode
-        // switch (e.g. toggling Low Power Mode) doesn't masquerade as abnormal drain.
+        // switch (toggling Low Power Mode, or flipping into High Power Mode on supported
+        // Macs) doesn't masquerade as abnormal drain.
         let windowSpan = newest.at.timeIntervalSince(oldest.at)
         guard windowSpan >= anomalyMinWindow else { return false }
-        guard history.allSatisfy({ $0.powerSaveMode == batteryStatus.powerSaveMode }) else { return false }
+        let sameEnergyMode = history.allSatisfy {
+            $0.powerSaveMode == batteryStatus.powerSaveMode
+                && ($0.highPowerMode ?? false) == batteryStatus.highPowerMode
+        }
+        guard sameEnergyMode else { return false }
 
         let recentDrainMah = oldest.capacityMah - newest.capacityMah
         guard recentDrainMah > 0 else { return false }
@@ -165,5 +174,67 @@ struct BatteryTrackerEngine {
         return (infoDictionary?["CFBundleShortVersionString"] as? String)
             ?? (infoDictionary?["CFBundleVersion"] as? String)
             ?? "1"
+    }
+}
+
+/// Reads macOS High Power Mode, which has no public API. The only signal is the
+/// `powermode` field in `pmset -g custom`, present only on Macs that support the
+/// feature (16" MacBook Pro with Max chips). Detection fails safe: anything other
+/// than an explicit `powermode 2` in the Battery Power section ⇒ false, so Macs
+/// without the feature behave exactly as before. The read is throttled because the
+/// helper polls every 5s and energy mode changes rarely.
+struct HighPowerModeReader {
+    private static let refreshInterval: TimeInterval = 60
+
+    private var lastValue = false
+    private var lastReadAt: Date = .distantPast
+
+    mutating func read(now: Date) -> Bool {
+        if now.timeIntervalSince(lastReadAt) >= Self.refreshInterval {
+            lastReadAt = now
+            lastValue = Self.parseBatteryPowerModeIsHigh(Self.runPmsetCustom() ?? "")
+        }
+        return lastValue
+    }
+
+    /// Parses `pmset -g custom`, returning true only when the Battery Power section
+    /// reports `powermode 2`. Pure function so it can be unit-checked off-device.
+    static func parseBatteryPowerModeIsHigh(_ output: String) -> Bool {
+        var inBatterySection = false
+        for rawLine in output.split(separator: "\n", omittingEmptySubsequences: false) {
+            let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
+            if trimmed == "Battery Power:" {
+                inBatterySection = true
+                continue
+            }
+            if trimmed.hasSuffix("Power:") {  // "AC Power:", "UPS Power:"
+                inBatterySection = false
+                continue
+            }
+            guard inBatterySection else { continue }
+            let tokens = trimmed.split(separator: " ", omittingEmptySubsequences: true)
+            if tokens.count >= 2, tokens[0] == "powermode", let value = Int(tokens[1]) {
+                return value == 2
+            }
+        }
+        return false
+    }
+
+    private static func runPmsetCustom() -> String? {
+        let process = Process()
+        let pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+        process.arguments = ["-g", "custom"]
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { return nil }
+            return String(data: data, encoding: .utf8)
+        } catch {
+            return nil
+        }
     }
 }

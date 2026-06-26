@@ -19,6 +19,9 @@ struct BatteryStatus {
     var isCharging: Bool
     var isFullyCharged: Bool
     var powerSaveMode: Bool
+    // High Power Mode (16" MacBook Pro with Max chips). No public API exists, so this is
+    // populated by the helper from `pmset` and defaults to false everywhere else.
+    var highPowerMode: Bool = false
 
     static var isAvailable: Bool {
         let entry = openBatteryEntry()

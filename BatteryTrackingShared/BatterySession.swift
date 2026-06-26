@@ -22,6 +22,8 @@ struct BatteryCapacityReading: Codable {
     var at: Date
     var capacityMah: Int
     var powerSaveMode: Bool
+    // Optional so readings written before this field existed still decode (nil ⇒ false).
+    var highPowerMode: Bool?
 }
 
 struct BatteryTrackerSession: Codable {
