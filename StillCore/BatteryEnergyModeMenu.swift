@@ -62,34 +62,16 @@ final class BatteryEnergyModeMenuController: NSObject {
             title: "Power Save", state: batteryState, powerSaveMode: true, tag: EnergyModeTag.powerSave
         ))
         menu.addItem(.separator())
-        let warningEnabled = AppSettings.abnormalDrainWarningEnabled
+        // The checkmark reflects whether the warning will actually reach the user:
+        // it shows on only while the warning is enabled and notifications are allowed.
         let warningItem = NSMenuItem(
             title: "Notify When Battery Drains Quickly",
             action: #selector(toggleAbnormalDrainWarning(_:)),
             keyEquivalent: ""
         )
         warningItem.target = self
-        warningItem.state = warningEnabled ? .on : .off
+        warningItem.state = abnormalDrainWarningActive ? .on : .off
         menu.addItem(warningItem)
-
-        // When the warning is on but the system has notifications turned off, the
-        // warning can't reach the user. Explain it and offer a way to fix it.
-        if warningEnabled, BatteryTrackerService.shared.notificationAuthorization == .denied {
-            let explanation = NSMenuItem(
-                title: "Notifications are turned off in System Settings",
-                action: nil,
-                keyEquivalent: ""
-            )
-            explanation.isEnabled = false
-            menu.addItem(explanation)
-            let openNotificationSettingsItem = NSMenuItem(
-                title: "Open Notification Settings…",
-                action: #selector(openNotificationSettings(_:)),
-                keyEquivalent: ""
-            )
-            openNotificationSettingsItem.target = self
-            menu.addItem(openNotificationSettingsItem)
-        }
         menu.addItem(.separator())
         let batterySettingsItem = NSMenuItem(
             title: "Battery Settings...",
@@ -101,16 +83,43 @@ final class BatteryEnergyModeMenuController: NSObject {
         return menu
     }
 
-    @objc private func toggleAbnormalDrainWarning(_ sender: NSMenuItem) {
-        AppSettings.abnormalDrainWarningEnabled.toggle()
-        sender.state = AppSettings.abnormalDrainWarningEnabled ? .on : .off
-        if AppSettings.abnormalDrainWarningEnabled {
-            // Opt-in is the contextually right moment to ask for permission.
-            BatteryTrackerService.shared.requestNotificationAuthorization()
+    /// Whether the warning is both enabled and able to reach the user. Notifications
+    /// can be revoked in System Settings after opt-in, so we check the live status.
+    private var abnormalDrainWarningActive: Bool {
+        guard AppSettings.abnormalDrainWarningEnabled else { return false }
+        switch BatteryTrackerService.shared.notificationAuthorization {
+        case .authorized, .provisional, .ephemeral:
+            return true
+        default:
+            return false
         }
     }
 
-    @objc private func openNotificationSettings(_ sender: NSMenuItem) {
+    @objc private func toggleAbnormalDrainWarning(_ sender: NSMenuItem) {
+        let service = BatteryTrackerService.shared
+        if sender.state == .on {
+            // Already on: simply turn the warning off.
+            AppSettings.abnormalDrainWarningEnabled = false
+            sender.state = .off
+            return
+        }
+
+        // Turning on. The warning is only meaningful if notifications can be
+        // delivered, so gate the checkmark on actually getting permission.
+        if service.notificationAuthorization == .denied {
+            // The system won't prompt again once denied — point the user at
+            // System Settings and leave the item unchecked until they grant it.
+            openNotificationSettings()
+            return
+        }
+
+        service.requestNotificationAuthorization { granted in
+            AppSettings.abnormalDrainWarningEnabled = granted
+            sender.state = granted ? .on : .off
+        }
+    }
+
+    private func openNotificationSettings() {
         guard let url = URL(
             string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
         ) else { return }

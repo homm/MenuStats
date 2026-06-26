@@ -260,10 +260,14 @@ final class BatteryTrackerService: ObservableObject {
     }
 
     /// Requests notification permission at a moment the user has clearly opted in
-    /// (e.g. enabling the warning). Only prompts while the status is undetermined.
-    func requestNotificationAuthorization() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { [weak self] _, _ in
-            Task { @MainActor in self?.refreshNotificationAuthorization() }
+    /// (e.g. enabling the warning). Only prompts while the status is undetermined;
+    /// reports whether permission ended up granted so the caller can reflect it.
+    func requestNotificationAuthorization(completion: @escaping @MainActor (Bool) -> Void = { _ in }) {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { [weak self] granted, _ in
+            Task { @MainActor in
+                self?.refreshNotificationAuthorization()
+                completion(granted)
+            }
         }
     }
 

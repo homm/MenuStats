@@ -41,10 +41,11 @@ enum AppSettings {
     }
 
     // Warn when the battery drains noticeably faster than the session average.
-    // Defaults to true: an unset value (object == nil) reads as enabled.
+    // Defaults to false: the user opts in (and grants notification permission)
+    // explicitly from the menu.
     static var abnormalDrainWarningEnabled: Bool {
         get {
-            UserDefaults.standard.object(forKey: abnormalDrainWarningEnabledKey) as? Bool ?? true
+            UserDefaults.standard.object(forKey: abnormalDrainWarningEnabledKey) as? Bool ?? false
         }
         set {
             UserDefaults.standard.set(newValue, forKey: abnormalDrainWarningEnabledKey)
