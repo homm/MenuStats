@@ -773,12 +773,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return
         }
 
-        // Local notifications surface abnormal battery drain. Ask once; the warning
-        // path is also gated by the AppSettings toggle.
+        // Local notifications surface abnormal battery drain. Register the delegate
+        // and the actionable category now (neither prompts the user); permission is
+        // requested later, only when the user enables the warning or we first need
+        // to show one. The warning path is also gated by the AppSettings toggle.
         if BatteryTrackerService.isBatteryAvailable {
             let center = UNUserNotificationCenter.current()
             center.delegate = self
-            center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+            center.setNotificationCategories([Self.abnormalDrainCategory()])
+            BatteryTrackerService.shared.refreshNotificationAuthorization()
         }
 
         updaterController = SPUStandardUpdaterController(
@@ -841,12 +844,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         NSApp.terminate(nil)
     }
 
+    private static func abnormalDrainCategory() -> UNNotificationCategory {
+        let openActivityMonitor = UNNotificationAction(
+            identifier: AbnormalDrainNotification.openActivityMonitorAction,
+            title: "Open Activity Monitor",
+            options: [.foreground]
+        )
+        let openBatterySettings = UNNotificationAction(
+            identifier: AbnormalDrainNotification.openBatterySettingsAction,
+            title: "Battery Settings",
+            options: [.foreground]
+        )
+        return UNNotificationCategory(
+            identifier: AbnormalDrainNotification.categoryIdentifier,
+            actions: [openActivityMonitor, openBatterySettings],
+            intentIdentifiers: [],
+            options: []
+        )
+    }
+
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        completionHandler([.banner, .sound])
+        // Calm advisory: show the banner, but stay silent.
+        completionHandler([.banner])
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let actionIdentifier = response.actionIdentifier
+        Task { @MainActor in
+            switch actionIdentifier {
+            case AbnormalDrainNotification.openActivityMonitorAction:
+                Self.openActivityMonitor()
+            case AbnormalDrainNotification.openBatterySettingsAction:
+                BatteryTrackerService.shared.openBatterySettings()
+            default:
+                break
+            }
+        }
+        completionHandler()
+    }
+
+    private static func openActivityMonitor() {
+        let url = URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app")
+        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
     }
 }
 

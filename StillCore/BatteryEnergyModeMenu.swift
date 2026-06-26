@@ -33,6 +33,8 @@ final class BatteryEnergyModeMenuController: NSObject {
 
     func showMenu() {
         guard let anchorView, let batteryState else { return }
+        // Refresh so the next open reflects the current permission state.
+        BatteryTrackerService.shared.refreshNotificationAuthorization()
         let menu = menu(for: batteryState)
         let selectedItem = menu.item(
             withTag: batteryState.batteryStatus.powerSaveMode ? EnergyModeTag.powerSave : EnergyModeTag.automatic
@@ -60,14 +62,34 @@ final class BatteryEnergyModeMenuController: NSObject {
             title: "Power Save", state: batteryState, powerSaveMode: true, tag: EnergyModeTag.powerSave
         ))
         menu.addItem(.separator())
+        let warningEnabled = AppSettings.abnormalDrainWarningEnabled
         let warningItem = NSMenuItem(
-            title: "Warn on Fast Battery Drain",
+            title: "Notify When Battery Drains Quickly",
             action: #selector(toggleAbnormalDrainWarning(_:)),
             keyEquivalent: ""
         )
         warningItem.target = self
-        warningItem.state = AppSettings.abnormalDrainWarningEnabled ? .on : .off
+        warningItem.state = warningEnabled ? .on : .off
         menu.addItem(warningItem)
+
+        // When the warning is on but the system has notifications turned off, the
+        // warning can't reach the user. Explain it and offer a way to fix it.
+        if warningEnabled, BatteryTrackerService.shared.notificationAuthorization == .denied {
+            let explanation = NSMenuItem(
+                title: "Notifications are turned off in System Settings",
+                action: nil,
+                keyEquivalent: ""
+            )
+            explanation.isEnabled = false
+            menu.addItem(explanation)
+            let openNotificationSettingsItem = NSMenuItem(
+                title: "Open Notification Settings…",
+                action: #selector(openNotificationSettings(_:)),
+                keyEquivalent: ""
+            )
+            openNotificationSettingsItem.target = self
+            menu.addItem(openNotificationSettingsItem)
+        }
         menu.addItem(.separator())
         let batterySettingsItem = NSMenuItem(
             title: "Battery Settings...",
@@ -82,6 +104,17 @@ final class BatteryEnergyModeMenuController: NSObject {
     @objc private func toggleAbnormalDrainWarning(_ sender: NSMenuItem) {
         AppSettings.abnormalDrainWarningEnabled.toggle()
         sender.state = AppSettings.abnormalDrainWarningEnabled ? .on : .off
+        if AppSettings.abnormalDrainWarningEnabled {
+            // Opt-in is the contextually right moment to ask for permission.
+            BatteryTrackerService.shared.requestNotificationAuthorization()
+        }
+    }
+
+    @objc private func openNotificationSettings(_ sender: NSMenuItem) {
+        guard let url = URL(
+            string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
+        ) else { return }
+        NSWorkspace.shared.open(url)
     }
 
     private func makeEnergyModeItem(

@@ -4,6 +4,16 @@ import Foundation
 import ServiceManagement
 import UserNotifications
 
+// Identifiers for the abnormal-drain notification and its actionable buttons.
+// Shared between the poster (BatteryTrackerService) and the delegate that
+// registers the category and handles taps (AppDelegate).
+enum AbnormalDrainNotification {
+    static let identifier = "com.github.homm.StillCore.abnormalDrain"
+    static let categoryIdentifier = "com.github.homm.StillCore.abnormalDrain.category"
+    static let openActivityMonitorAction = "com.github.homm.StillCore.abnormalDrain.activityMonitor"
+    static let openBatterySettingsAction = "com.github.homm.StillCore.abnormalDrain.batterySettings"
+}
+
 @MainActor
 enum BatteryTrackerInstallState: Equatable {
     case notInstalled
@@ -70,6 +80,10 @@ final class BatteryTrackerService: ObservableObject {
     @Published private(set) var runtimeState: BatteryRuntimeState?
     @Published private(set) var lastErrorMessage: String = ""
 
+    // Cached notification permission so the energy menu can reflect a denial without
+    // an async lookup. Refreshed lazily; never prompts on its own.
+    @Published private(set) var notificationAuthorization: UNAuthorizationStatus = .notDetermined
+
     // Lets non-SwiftUI code observe runtimeState without exposing write access.
     var runtimeStatePublisher: AnyPublisher<BatteryRuntimeState?, Never> {
         $runtimeState.eraseToAnyPublisher()
@@ -83,7 +97,6 @@ final class BatteryTrackerService: ObservableObject {
     // Abnormal-drain notification: fire once on the rising edge, with a cooldown so a
     // flapping flag can't spam the user.
     private static let abnormalDrainNotificationCooldown: TimeInterval = 1800
-    private static let abnormalDrainNotificationIdentifier = "com.github.homm.StillCore.abnormalDrain"
     private var lastAbnormalDrain = false
     private var lastAbnormalNotifiedAt: Date?
 
@@ -208,27 +221,50 @@ final class BatteryTrackerService: ObservableObject {
     }
 
     private func postAbnormalDrainNotification() {
-        let content = UNMutableNotificationContent()
-        content.title = "Battery draining faster than usual"
-        if let runtimeState,
-           let usedPercent = runtimeState.usedPercent,
-           let activeSeconds = runtimeState.activeSeconds {
-            content.body = "Recent drain is well above this session's average "
-                + "(used \(Int(usedPercent.rounded()))% over \(formatDuration(activeSeconds))). "
-                + "Check for runaway apps or heavy background tasks."
-        } else {
-            content.body = "Recent drain is well above this session's average. "
-                + "Check for runaway apps or heavy background tasks."
+        // Ask for permission only now, the first time we actually need to warn.
+        // requestAuthorization is a no-op prompt once the status is determined.
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { [weak self] granted, _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.refreshNotificationAuthorization()
+                guard granted else { return }
+                self.deliverAbnormalDrainNotification()
+            }
         }
-        content.sound = .default
+    }
+
+    private func deliverAbnormalDrainNotification() {
+        let content = UNMutableNotificationContent()
+        content.title = "Battery Is Draining Quickly"
+        content.body = "StillCore noticed higher power use over the last few minutes."
+        // Calm advisory: banner only, no sound. The category adds the action buttons.
+        content.categoryIdentifier = AbnormalDrainNotification.categoryIdentifier
 
         // Stable identifier coalesces repeats into a single Notification Center entry.
         let request = UNNotificationRequest(
-            identifier: Self.abnormalDrainNotificationIdentifier,
+            identifier: AbnormalDrainNotification.identifier,
             content: content,
             trigger: nil
         )
         UNUserNotificationCenter.current().add(request)
+    }
+
+    /// Refreshes the cached notification permission. Never prompts.
+    func refreshNotificationAuthorization() {
+        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
+            let status = settings.authorizationStatus
+            Task { @MainActor in
+                self?.notificationAuthorization = status
+            }
+        }
+    }
+
+    /// Requests notification permission at a moment the user has clearly opted in
+    /// (e.g. enabling the warning). Only prompts while the status is undetermined.
+    func requestNotificationAuthorization() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { [weak self] _, _ in
+            Task { @MainActor in self?.refreshNotificationAuthorization() }
+        }
     }
 
     var runtimeLabel: String {
