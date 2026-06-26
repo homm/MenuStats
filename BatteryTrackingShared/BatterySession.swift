@@ -18,11 +18,23 @@ enum BatteryTrackerConstants {
     static let heartbeatTimeout: TimeInterval = 15
 }
 
+struct BatteryCapacityReading: Codable {
+    var at: Date
+    var capacityMah: Int
+    var powerSaveMode: Bool
+    // Optional so readings written before this field existed still decode (nil ⇒ false).
+    var highPowerMode: Bool?
+}
+
 struct BatteryTrackerSession: Codable {
     var startedAt: Date
     var startCapacityMah: Int
     var sleepSeconds: Int
     var lastCheckAt: Date
+    // Trailing window of recent readings (bounded to ~15 min) used to detect
+    // abnormally fast drain within the session. Optional so older on-disk state
+    // (written before this field existed) still decodes.
+    var capacityHistory: [BatteryCapacityReading]?
 }
 
 struct BatteryTrackerState: Codable {
@@ -32,6 +44,9 @@ struct BatteryTrackerState: Codable {
     var heartbeatAt: Date = .distantPast
     var session: BatteryTrackerSession?
     var lastError: String?
+    // Set by the helper when the recent drain rate exceeds the session average
+    // by a sustained margin. Optional for backward-compatible decoding.
+    var abnormalDrainDetected: Bool?
 }
 
 struct BatterySessionStore {

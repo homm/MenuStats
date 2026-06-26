@@ -2,6 +2,17 @@ import AppKit
 import Combine
 import Foundation
 import ServiceManagement
+import UserNotifications
+
+// Identifiers for the abnormal-drain notification and its actionable buttons.
+// Shared between the poster (BatteryTrackerService) and the delegate that
+// registers the category and handles taps (AppDelegate).
+enum AbnormalDrainNotification {
+    static let identifier = "com.github.homm.StillCore.abnormalDrain"
+    static let categoryIdentifier = "com.github.homm.StillCore.abnormalDrain.category"
+    static let openActivityMonitorAction = "com.github.homm.StillCore.abnormalDrain.activityMonitor"
+    static let openBatterySettingsAction = "com.github.homm.StillCore.abnormalDrain.batterySettings"
+}
 
 @MainActor
 enum BatteryTrackerInstallState: Equatable {
@@ -47,6 +58,10 @@ struct BatteryRuntimeState {
         guard let usedCapacityMah, batteryStatus.maxCapacityMah > 0 else { return nil }
         return Double(usedCapacityMah) * 100.0 / Double(batteryStatus.maxCapacityMah)
     }
+
+    var abnormalDrainDetected: Bool {
+        batteryTrackerState?.abnormalDrainDetected ?? false
+    }
 }
 
 @MainActor
@@ -65,6 +80,10 @@ final class BatteryTrackerService: ObservableObject {
     @Published private(set) var runtimeState: BatteryRuntimeState?
     @Published private(set) var lastErrorMessage: String = ""
 
+    // Cached notification permission so the energy menu can reflect a denial without
+    // an async lookup. Refreshed lazily; never prompts on its own.
+    @Published private(set) var notificationAuthorization: UNAuthorizationStatus = .notDetermined
+
     // Lets non-SwiftUI code observe runtimeState without exposing write access.
     var runtimeStatePublisher: AnyPublisher<BatteryRuntimeState?, Never> {
         $runtimeState.eraseToAnyPublisher()
@@ -74,6 +93,12 @@ final class BatteryTrackerService: ObservableObject {
     private let service = SMAppService.agent(plistName: BatteryTrackerConstants.launchAgentPlistName)
     private var timer: Timer?
     private var pendingRefreshWorkItem: DispatchWorkItem?
+
+    // Abnormal-drain notification: fire once on the rising edge, with a cooldown so a
+    // flapping flag can't spam the user.
+    private static let abnormalDrainNotificationCooldown: TimeInterval = 1800
+    private var lastAbnormalDrain = false
+    private var lastAbnormalNotifiedAt: Date?
 
     private init(start: Bool) {
         guard start else { return }
@@ -174,6 +199,76 @@ final class BatteryTrackerService: ObservableObject {
         } else if !lastErrorMessage.hasPrefix("Install failed:") && !lastErrorMessage.hasPrefix("Uninstall failed:") {
             lastErrorMessage = ""
         }
+
+        evaluateAbnormalDrainNotification()
+    }
+
+    private func evaluateAbnormalDrainNotification() {
+        let detected = isHelperRunning && (runtimeState?.abnormalDrainDetected ?? false)
+        defer { lastAbnormalDrain = detected }
+
+        guard detected, !lastAbnormalDrain else { return }
+        guard AppSettings.abnormalDrainWarningEnabled else { return }
+
+        let now = Date()
+        if let lastNotifiedAt = lastAbnormalNotifiedAt,
+           now.timeIntervalSince(lastNotifiedAt) < Self.abnormalDrainNotificationCooldown {
+            return
+        }
+        lastAbnormalNotifiedAt = now
+
+        postAbnormalDrainNotification()
+    }
+
+    private func postAbnormalDrainNotification() {
+        // Ask for permission only now, the first time we actually need to warn.
+        // requestAuthorization is a no-op prompt once the status is determined.
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { [weak self] granted, _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.refreshNotificationAuthorization()
+                guard granted else { return }
+                self.deliverAbnormalDrainNotification()
+            }
+        }
+    }
+
+    private func deliverAbnormalDrainNotification() {
+        let content = UNMutableNotificationContent()
+        content.title = "Battery Is Draining Quickly"
+        content.body = "StillCore noticed higher power use over the last few minutes."
+        // Calm advisory: banner only, no sound. The category adds the action buttons.
+        content.categoryIdentifier = AbnormalDrainNotification.categoryIdentifier
+
+        // Stable identifier coalesces repeats into a single Notification Center entry.
+        let request = UNNotificationRequest(
+            identifier: AbnormalDrainNotification.identifier,
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request)
+    }
+
+    /// Refreshes the cached notification permission. Never prompts.
+    func refreshNotificationAuthorization() {
+        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
+            let status = settings.authorizationStatus
+            Task { @MainActor in
+                self?.notificationAuthorization = status
+            }
+        }
+    }
+
+    /// Requests notification permission at a moment the user has clearly opted in
+    /// (e.g. enabling the warning). Only prompts while the status is undetermined;
+    /// reports whether permission ended up granted so the caller can reflect it.
+    func requestNotificationAuthorization(completion: @escaping @MainActor (Bool) -> Void = { _ in }) {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { [weak self] granted, _ in
+            Task { @MainActor in
+                self?.refreshNotificationAuthorization()
+                completion(granted)
+            }
+        }
     }
 
     var runtimeLabel: String {
@@ -216,7 +311,8 @@ final class BatteryTrackerService: ObservableObject {
             } else {
                 sleepSuffix = ""
             }
-            return "Drained \(Int(usedPercent.rounded()))% over \(activeDuration)\(sleepSuffix)"
+            let warningPrefix = runtimeState.abnormalDrainDetected ? "⚠︎ " : ""
+            return "\(warningPrefix)Drained \(Int(usedPercent.rounded()))% over \(activeDuration)\(sleepSuffix)"
         }
 
         return chargeStatusText(runtimeState.chargeStatus)

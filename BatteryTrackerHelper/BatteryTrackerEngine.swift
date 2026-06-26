@@ -4,6 +4,12 @@ struct BatteryTrackerEngine {
     private static let pollInterval: TimeInterval = 5
     private static let sleepThreshold: TimeInterval = 10
 
+    // Abnormal-drain detection tuning.
+    private static let anomalyWindow: TimeInterval = 900     // trailing window kept in history (15 min)
+    private static let anomalyMinWindow: TimeInterval = 300  // min data span before judging (5 min)
+    private static let anomalyMinSession: TimeInterval = 1800 // min active session before judging (30 min)
+    private static let anomalyMultiplier: Double = 1.5       // recent rate must be >= this * session average
+
     private let store: BatterySessionStore
     private let helperVersion: String
 
@@ -16,13 +22,16 @@ struct BatteryTrackerEngine {
     }
 
     func run() -> Never {
+        // Cache survives loop iterations so `pmset` is only spawned on a slow cadence.
+        var highPowerModeReader = HighPowerModeReader()
         while true {
             autoreleasepool {
                 let cycleStartedAt = Date()
 
                 do {
                     var state = try store.load() ?? makeState(now: cycleStartedAt)
-                    let batteryStatus = try BatteryStatus.read()
+                    var batteryStatus = try BatteryStatus.read()
+                    batteryStatus.highPowerMode = highPowerModeReader.read(now: cycleStartedAt)
                     state = update(state: state, batteryStatus: batteryStatus, now: cycleStartedAt)
                     try store.save(state)
                 } catch {
@@ -43,13 +52,17 @@ struct BatteryTrackerEngine {
     private func update(state: BatteryTrackerState, batteryStatus: BatteryStatus, now: Date) -> BatteryTrackerState {
         var nextState = state
         var session = nextState.session
+        var sleepGapDetected = false
 
         if let previousCheck = session?.lastCheckAt {
             let elapsed = now.timeIntervalSince(previousCheck)
             if elapsed > Self.sleepThreshold {
                 session?.sleepSeconds += max(0, Int(elapsed.rounded()) - Int(Self.pollInterval))
+                sleepGapDetected = true
             }
         }
+
+        var abnormalDrainDetected = false
 
         if batteryStatus.isOnACPower {
             session = nil
@@ -59,12 +72,33 @@ struct BatteryTrackerEngine {
                     startedAt: now,
                     startCapacityMah: batteryStatus.currentCapacityMah,
                     sleepSeconds: 0,
-                    lastCheckAt: now
+                    lastCheckAt: now,
+                    capacityHistory: nil
                 )
             }
 
             if var activeSession = session {
                 activeSession.lastCheckAt = now
+
+                let reading = BatteryCapacityReading(
+                    at: now,
+                    capacityMah: batteryStatus.currentCapacityMah,
+                    powerSaveMode: batteryStatus.powerSaveMode,
+                    highPowerMode: batteryStatus.highPowerMode
+                )
+                // A sleep gap makes the trailing rate meaningless; start the window fresh.
+                var history = sleepGapDetected ? [] : (activeSession.capacityHistory ?? [])
+                history.append(reading)
+                let cutoff = now.addingTimeInterval(-Self.anomalyWindow)
+                history.removeAll { $0.at < cutoff }
+                activeSession.capacityHistory = history
+
+                abnormalDrainDetected = Self.evaluateAbnormalDrain(
+                    session: activeSession,
+                    batteryStatus: batteryStatus,
+                    now: now
+                )
+
                 session = activeSession
             }
         }
@@ -74,7 +108,45 @@ struct BatteryTrackerEngine {
         nextState.heartbeatAt = now
         nextState.session = session
         nextState.lastError = nil
+        nextState.abnormalDrainDetected = abnormalDrainDetected
         return nextState
+    }
+
+    /// Returns true when the trailing-window drain rate is sustainedly faster than the
+    /// session average. Pure function of its inputs so it is easy to reason about/test.
+    static func evaluateAbnormalDrain(
+        session: BatteryTrackerSession,
+        batteryStatus: BatteryStatus,
+        now: Date
+    ) -> Bool {
+        // Session must be mature enough for the average to be a trustworthy baseline.
+        let activeSeconds = Int(now.timeIntervalSince(session.startedAt).rounded()) - session.sleepSeconds
+        guard Double(activeSeconds) >= anomalyMinSession else { return false }
+
+        let history = session.capacityHistory ?? []
+        guard let oldest = history.first, let newest = history.last else { return false }
+
+        // Need a sustained span of recent data, all in the same energy mode so a mode
+        // switch (toggling Low Power Mode, or flipping into High Power Mode on supported
+        // Macs) doesn't masquerade as abnormal drain.
+        let windowSpan = newest.at.timeIntervalSince(oldest.at)
+        guard windowSpan >= anomalyMinWindow else { return false }
+        let sameEnergyMode = history.allSatisfy {
+            $0.powerSaveMode == batteryStatus.powerSaveMode
+                && ($0.highPowerMode ?? false) == batteryStatus.highPowerMode
+        }
+        guard sameEnergyMode else { return false }
+
+        let recentDrainMah = oldest.capacityMah - newest.capacityMah
+        guard recentDrainMah > 0 else { return false }
+        let recentRate = Double(recentDrainMah) / windowSpan
+
+        let sessionDrainMah = session.startCapacityMah - batteryStatus.currentCapacityMah
+        guard sessionDrainMah > 0, activeSeconds > 0 else { return false }
+        let sessionRate = Double(sessionDrainMah) / Double(activeSeconds)
+        guard sessionRate > 0 else { return false }
+
+        return recentRate >= anomalyMultiplier * sessionRate
     }
 
     private func makeState(now: Date) -> BatteryTrackerState {
@@ -102,5 +174,67 @@ struct BatteryTrackerEngine {
         return (infoDictionary?["CFBundleShortVersionString"] as? String)
             ?? (infoDictionary?["CFBundleVersion"] as? String)
             ?? "1"
+    }
+}
+
+/// Reads macOS High Power Mode, which has no public API. The only signal is the
+/// `powermode` field in `pmset -g custom`, present only on Macs that support the
+/// feature (16" MacBook Pro with Max chips). Detection fails safe: anything other
+/// than an explicit `powermode 2` in the Battery Power section ⇒ false, so Macs
+/// without the feature behave exactly as before. The read is throttled because the
+/// helper polls every 5s and energy mode changes rarely.
+struct HighPowerModeReader {
+    private static let refreshInterval: TimeInterval = 60
+
+    private var lastValue = false
+    private var lastReadAt: Date = .distantPast
+
+    mutating func read(now: Date) -> Bool {
+        if now.timeIntervalSince(lastReadAt) >= Self.refreshInterval {
+            lastReadAt = now
+            lastValue = Self.parseBatteryPowerModeIsHigh(Self.runPmsetCustom() ?? "")
+        }
+        return lastValue
+    }
+
+    /// Parses `pmset -g custom`, returning true only when the Battery Power section
+    /// reports `powermode 2`. Pure function so it can be unit-checked off-device.
+    static func parseBatteryPowerModeIsHigh(_ output: String) -> Bool {
+        var inBatterySection = false
+        for rawLine in output.split(separator: "\n", omittingEmptySubsequences: false) {
+            let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
+            if trimmed == "Battery Power:" {
+                inBatterySection = true
+                continue
+            }
+            if trimmed.hasSuffix("Power:") {  // "AC Power:", "UPS Power:"
+                inBatterySection = false
+                continue
+            }
+            guard inBatterySection else { continue }
+            let tokens = trimmed.split(separator: " ", omittingEmptySubsequences: true)
+            if tokens.count >= 2, tokens[0] == "powermode", let value = Int(tokens[1]) {
+                return value == 2
+            }
+        }
+        return false
+    }
+
+    private static func runPmsetCustom() -> String? {
+        let process = Process()
+        let pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+        process.arguments = ["-g", "custom"]
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { return nil }
+            return String(data: data, encoding: .utf8)
+        } catch {
+            return nil
+        }
     }
 }

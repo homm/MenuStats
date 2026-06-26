@@ -33,6 +33,8 @@ final class BatteryEnergyModeMenuController: NSObject {
 
     func showMenu() {
         guard let anchorView, let batteryState else { return }
+        // Refresh so the next open reflects the current permission state.
+        BatteryTrackerService.shared.refreshNotificationAuthorization()
         let menu = menu(for: batteryState)
         let selectedItem = menu.item(
             withTag: batteryState.batteryStatus.powerSaveMode ? EnergyModeTag.powerSave : EnergyModeTag.automatic
@@ -60,6 +62,17 @@ final class BatteryEnergyModeMenuController: NSObject {
             title: "Power Save", state: batteryState, powerSaveMode: true, tag: EnergyModeTag.powerSave
         ))
         menu.addItem(.separator())
+        // The checkmark reflects whether the warning will actually reach the user:
+        // it shows on only while the warning is enabled and notifications are allowed.
+        let warningItem = NSMenuItem(
+            title: "Notify When Battery Drains Quickly",
+            action: #selector(toggleAbnormalDrainWarning(_:)),
+            keyEquivalent: ""
+        )
+        warningItem.target = self
+        warningItem.state = abnormalDrainWarningActive ? .on : .off
+        menu.addItem(warningItem)
+        menu.addItem(.separator())
         let batterySettingsItem = NSMenuItem(
             title: "Battery Settings...",
             action: #selector(openBatterySettings(_:)),
@@ -68,6 +81,49 @@ final class BatteryEnergyModeMenuController: NSObject {
         batterySettingsItem.target = self
         menu.addItem(batterySettingsItem)
         return menu
+    }
+
+    /// Whether the warning is both enabled and able to reach the user. Notifications
+    /// can be revoked in System Settings after opt-in, so we check the live status.
+    private var abnormalDrainWarningActive: Bool {
+        guard AppSettings.abnormalDrainWarningEnabled else { return false }
+        switch BatteryTrackerService.shared.notificationAuthorization {
+        case .authorized, .provisional, .ephemeral:
+            return true
+        default:
+            return false
+        }
+    }
+
+    @objc private func toggleAbnormalDrainWarning(_ sender: NSMenuItem) {
+        let service = BatteryTrackerService.shared
+        if sender.state == .on {
+            // Already on: simply turn the warning off.
+            AppSettings.abnormalDrainWarningEnabled = false
+            sender.state = .off
+            return
+        }
+
+        // Turning on. The warning is only meaningful if notifications can be
+        // delivered, so gate the checkmark on actually getting permission.
+        if service.notificationAuthorization == .denied {
+            // The system won't prompt again once denied — point the user at
+            // System Settings and leave the item unchecked until they grant it.
+            openNotificationSettings()
+            return
+        }
+
+        service.requestNotificationAuthorization { granted in
+            AppSettings.abnormalDrainWarningEnabled = granted
+            sender.state = granted ? .on : .off
+        }
+    }
+
+    private func openNotificationSettings() {
+        guard let url = URL(
+            string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
+        ) else { return }
+        NSWorkspace.shared.open(url)
     }
 
     private func makeEnergyModeItem(

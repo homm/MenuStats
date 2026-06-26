@@ -3,12 +3,14 @@ import Combine
 import SwiftUI
 import MacmonSwift
 import Sparkle
+import UserNotifications
 
 enum AppSettings {
     static let defaultMetricsIntervalMs = 2000
     private static let metricsIntervalKey = "metricsIntervalMs"
     private static let frequencyUsageByCoresKey = "frequencyUsageByCores"
     private static let statusItemDisplayModeKey = "statusItemDisplayMode"
+    private static let abnormalDrainWarningEnabledKey = "abnormalDrainWarningEnabled"
 
     static var metricsIntervalMs: Int {
         get {
@@ -35,6 +37,18 @@ enum AppSettings {
         }
         set {
             UserDefaults.standard.set(newValue, forKey: frequencyUsageByCoresKey)
+        }
+    }
+
+    // Warn when the battery drains noticeably faster than the session average.
+    // Defaults to false: the user opts in (and grants notification permission)
+    // explicitly from the menu.
+    static var abnormalDrainWarningEnabled: Bool {
+        get {
+            UserDefaults.standard.object(forKey: abnormalDrainWarningEnabledKey) as? Bool ?? false
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: abnormalDrainWarningEnabledKey)
         }
     }
 }
@@ -739,7 +753,7 @@ struct ContentView: View {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private var presentationController: MenuPresentationController<ContentView>?
     private let statusItemMenu = NSMenu()
     private var statusItemController: StatusItemController?
@@ -758,6 +772,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             BatteryTrackerService.shared.uninstallHelper()
             NSApp.terminate(nil)
             return
+        }
+
+        // Local notifications surface abnormal battery drain. Register the delegate
+        // and the actionable category now (neither prompts the user); permission is
+        // requested later, only when the user enables the warning or we first need
+        // to show one. The warning path is also gated by the AppSettings toggle.
+        if BatteryTrackerService.isBatteryAvailable {
+            let center = UNUserNotificationCenter.current()
+            center.delegate = self
+            center.setNotificationCategories([Self.abnormalDrainCategory()])
+            BatteryTrackerService.shared.refreshNotificationAuthorization()
         }
 
         updaterController = SPUStandardUpdaterController(
@@ -818,6 +843,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func quitApplication() {
         NSApp.terminate(nil)
+    }
+
+    private static func abnormalDrainCategory() -> UNNotificationCategory {
+        let openActivityMonitor = UNNotificationAction(
+            identifier: AbnormalDrainNotification.openActivityMonitorAction,
+            title: "Open Activity Monitor",
+            options: [.foreground]
+        )
+        let openBatterySettings = UNNotificationAction(
+            identifier: AbnormalDrainNotification.openBatterySettingsAction,
+            title: "Battery Settings",
+            options: [.foreground]
+        )
+        return UNNotificationCategory(
+            identifier: AbnormalDrainNotification.categoryIdentifier,
+            actions: [openActivityMonitor, openBatterySettings],
+            intentIdentifiers: [],
+            options: []
+        )
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        // Calm advisory: show the banner, but stay silent.
+        completionHandler([.banner])
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let actionIdentifier = response.actionIdentifier
+        Task { @MainActor in
+            switch actionIdentifier {
+            case AbnormalDrainNotification.openActivityMonitorAction:
+                Self.openActivityMonitor()
+            case AbnormalDrainNotification.openBatterySettingsAction:
+                BatteryTrackerService.shared.openBatterySettings()
+            default:
+                break
+            }
+        }
+        completionHandler()
+    }
+
+    private static func openActivityMonitor() {
+        let url = URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app")
+        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
     }
 }
 
